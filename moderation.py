@@ -74,18 +74,20 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
                             if not paths:
                                 raise ValueError("Не удалось скачать медиафайлы из альбома")
 
-                            # Send downloaded files as an album via bot client
+                            # Для альбомов отправляем сначала медиа, затем отдельно кнопки
                             await clients.bot_client.send_file(
                                 admin,
                                 paths, # Send the list of paths
-                                caption=text,
                                 parse_mode='HTML'
+                                # Убрали buttons - Telegram не поддерживает кнопки в альбомах
                             )
-                            # Отправляем отдельное сообщение с кнопками, так как в альбомах кнопки не поддерживаются
+                            
+                            # Отправляем текстовое сообщение с кнопками отдельно
                             await clients.bot_client.send_message(
                                 admin,
-                                "👆 Используйте кнопки ниже для модерации 👇",
-                                buttons=buttons
+                                text, # Отправляем основной текст здесь вместо caption в альбоме
+                                buttons=buttons,
+                                parse_mode='HTML'
                             )
                         else:
                             # Fallback for single media: download via original client and resend via bot

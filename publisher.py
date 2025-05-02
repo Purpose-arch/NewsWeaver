@@ -33,8 +33,17 @@ async def publish(channel_id: int, message_id: int):
                 msgs = await client.get_messages(entity, limit=100)
                 media_msgs = [m for m in msgs if getattr(m, 'grouped_id', None) == grouped_id]
                 media_msgs.sort(key=lambda m: m.id)
-                # download all media at once
-                paths = await client.download_media(media_msgs, file=tmp)
+                # Скачиваем каждое медиа отдельно
+                paths = []
+                for msg in media_msgs:
+                    if getattr(msg, 'media', None):
+                        path = await client.download_media(msg, file=tmp)
+                        if path:
+                            paths.append(path)
+                
+                if not paths:
+                    raise ValueError("Не удалось скачать медиафайлы из альбома")
+                    
                 await clients.bot_client.send_file(
                     config.TARGET_ID,
                     paths,
