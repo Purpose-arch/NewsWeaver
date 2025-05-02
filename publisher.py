@@ -6,6 +6,7 @@ import media
 import clients
 import moderation
 import os
+from utils import markdown_to_html
 
 async def publish(channel_id: int, message_id: int):
     """
@@ -18,7 +19,8 @@ async def publish(channel_id: int, message_id: int):
         logger.error(f"No pending entry to publish {key}")
         return
 
-    text = entry["text"]
+    # Переформулированные тексты уже в HTML, но проверим на наличие Markdown для совместимости
+    text = markdown_to_html(entry["text"])
     # append footer link
     text = f"{text}\n\n📰 <a href=\"https://t.me/fatezhinteresting\">Фатежский Вестник</a>"
     

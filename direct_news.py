@@ -7,6 +7,7 @@ import config
 import clients
 import tempfile
 from logger import logger
+from utils import markdown_to_html
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media_direct")
@@ -176,7 +177,9 @@ async def publish_direct_news(message_id: int):
         logger.error(f"No direct news entry to publish {message_id}")
         return
     
-    text = entry["text"]
+    # Конвертируем markdown в HTML
+    text = markdown_to_html(entry["text"])
+    
     # Добавляем подпись канала
     if text:
         text = f"{text}\n\n📰 <a href=\"https://t.me/fatezhinteresting\">Фатежский Вестник</a>"
