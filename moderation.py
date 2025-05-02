@@ -79,7 +79,12 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
                                 admin,
                                 paths, # Send the list of paths
                                 caption=text,
-                                parse_mode='HTML',
+                                parse_mode='HTML'
+                            )
+                            # Отправляем отдельное сообщение с кнопками, так как в альбомах кнопки не поддерживаются
+                            await clients.bot_client.send_message(
+                                admin,
+                                "👆 Используйте кнопки ниже для модерации 👇",
                                 buttons=buttons
                             )
                         else:
