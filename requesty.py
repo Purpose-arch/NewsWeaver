@@ -44,7 +44,7 @@ async def reformulate_text(text: str) -> str:
         url = "https://router.requesty.ai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         payload = {
-            "model": "openai/gpt-4.1-mini",
+            "model": "openai/o3-mini-2025-01-31",
             "messages": [
                 {"role": "system", "content": default_prompt},
                 {"role": "user",   "content": text}
