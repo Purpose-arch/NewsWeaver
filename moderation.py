@@ -9,6 +9,7 @@ import publisher
 import media
 import tempfile
 from logger import logger
+import direct_news
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media")
@@ -167,6 +168,14 @@ async def register_handlers():
     @clients.bot_client.on(events.CallbackQuery)
     async def callback_handler(event):
         data = event.data.decode()
+        
+        # Проверяем, не является ли это запросом для прямой новости
+        if data.startswith("direct_"):
+            # Делегируем обработку модулю direct_news
+            if await direct_news.process_direct_callback(event):
+                return
+        
+        # Обработка обычных переформулированных новостей
         action, ch, mid = data.split(":")
         key = (int(ch), int(mid))
         entry = pending.get(key)
@@ -217,6 +226,9 @@ async def register_handlers():
             logger.warning(f"Error while deleting moderation messages: {e}")
 
         logger.info(f"Moderator {event.sender_id} - {action} {key}")
+
+    # Регистрируем обработчики из модуля direct_news
+    await direct_news.register_handlers()
 
 def cleanup_media_files(key):
     """

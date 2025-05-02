@@ -5,6 +5,9 @@ import db
 import clients
 import parser
 import moderation
+import requesty
+import publisher
+import direct_news
 
 async def main():
     logger.info("→ Initialize database")
