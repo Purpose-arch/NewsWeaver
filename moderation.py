@@ -89,14 +89,21 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
                         pending[key]["media_paths"] = paths
 
                         # Отправляем альбом БЕЗ текста новости и кнопок
-                        album_msg = await clients.bot_client.send_file(
+                        album_msgs = await clients.bot_client.send_file(
                             config.MODERATION_CHAT_ID,
                             paths,
                             parse_mode='HTML'
                         )
-                        if album_msg:
-                            # Сохраняем ID сообщения с альбомом
-                            pending[key]["moderation_msg_ids"].append(album_msg.id)
+                        
+                        # При отправке альбома возвращается список сообщений, а не одно сообщение
+                        if isinstance(album_msgs, list):
+                            # Сохраняем ID всех сообщений альбома
+                            for msg in album_msgs:
+                                if hasattr(msg, 'id'):
+                                    pending[key]["moderation_msg_ids"].append(msg.id)
+                        elif hasattr(album_msgs, 'id'):
+                            # На случай, если вернулось одно сообщение
+                            pending[key]["moderation_msg_ids"].append(album_msgs.id)
                         
                         # Отправляем отдельно текст новости с кнопками модерации
                         text_msg = await clients.bot_client.send_message(
