@@ -15,13 +15,28 @@ os.makedirs(TEMP_MEDIA_DIR, exist_ok=True)
 # direct_news[message_id] = {"message": …, "text": …, "decided": …, "media_paths": [], "moderation_msg_ids": [], "reply_to_id": …}
 direct_news: dict[int, dict] = {}
 
+# Переменная для хранения ID бота, заполняется при инициализации
+BOT_ID = None
+
 async def process_direct_message(message):
     """
     Обрабатывает прямые сообщения от админов в чате модерации.
     Отвечает на сообщение с вопросом об отправке и кнопками модерации.
     """
+    global BOT_ID
+    
+    # Получаем ID бота, если ещё не получали
+    if BOT_ID is None:
+        try:
+            me = await clients.bot_client.get_me()
+            BOT_ID = me.id
+            logger.info(f"Bot ID initialized: {BOT_ID}")
+        except Exception as e:
+            logger.error(f"Failed to get bot ID: {e}")
+            return
+    
     # Игнорируем сообщения от бота
-    if message.sender_id == clients.bot_client.uid:
+    if message.sender_id == BOT_ID:
         return
     
     # Игнорируем сообщения, которые сами являются ответами
