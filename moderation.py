@@ -100,4 +100,10 @@ async def register_handlers():
             await publisher.reject(*key)
             await event.answer("❌ Отклонено", alert=False)
 
+        # delete the moderation message after processing
+        try:
+            await event.delete()
+        except Exception as e:
+            logger.warning(f"Cannot delete moderation message: {e}")
+
         logger.info(f"Moderator {event.sender_id} - {action} {key}")
