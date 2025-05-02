@@ -25,14 +25,30 @@ async def publish(channel_id: int, message_id: int):
 
     # если есть вложение, скачиваем его и отправляем с caption
     if getattr(original, "media", None):
+        grouped_id = getattr(original, 'grouped_id', None)
+        entity = getattr(original, 'chat_id', None) or getattr(original.peer_id, 'channel_id', None)
         with tempfile.TemporaryDirectory() as tmp:
-            path = await client.download_media(original, file=tmp)
-            await clients.bot_client.send_file(
-                config.TARGET_ID,
-                path,
-                caption=text,
-                parse_mode='HTML'
-            )
+            if grouped_id:
+                # fetch all messages from the same album
+                msgs = await client.get_messages(entity, limit=100)
+                media_msgs = [m for m in msgs if getattr(m, 'grouped_id', None) == grouped_id]
+                media_msgs.sort(key=lambda m: m.id)
+                # download all media at once
+                paths = await client.download_media(media_msgs, file=tmp)
+                await clients.bot_client.send_file(
+                    config.TARGET_ID,
+                    paths,
+                    caption=text,
+                    parse_mode='HTML'
+                )
+            else:
+                path = await client.download_media(original, file=tmp)
+                await clients.bot_client.send_file(
+                    config.TARGET_ID,
+                    path,
+                    caption=text,
+                    parse_mode='HTML'
+                )
     else:
         # иначе просто отправляем текст
         await clients.bot_client.send_message(
