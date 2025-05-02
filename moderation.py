@@ -5,6 +5,7 @@ import config
 import clients
 import publisher
 import media
+import tempfile
 from logger import logger
 
 # pending[(channel_id, message_id)] = {"client":…, "message":…, "text":…, "decided":…}
@@ -12,7 +13,7 @@ pending: dict[tuple[int,int], dict] = {}
 
 async def send_for_moderation(channel_id: int, message_id: int, text: str, client, original_message):
     """
-    Рассылает переформулированный текст всем ADMIN_IDS с Inline-кнопками.
+    Рассылает переформулированный текст и вложения всем ADMIN_IDS с Inline-кнопками.
     Решение фиксируется — повторные клики игнорируем.
     """
     key = (channel_id, message_id)
@@ -30,13 +31,36 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
         ]
     ]
     for admin in config.ADMIN_IDS:
-        # first send media attachments if any
-        if original_message.media:
-            await media.send_media(client, admin, original_message)
-        # then send reformulated text with inline buttons
-        await clients.bot_client.send_message(
-            admin, text, buttons=buttons, parse_mode='HTML'
-        )
+        # send media with caption and inline buttons in one message
+        if getattr(original_message, 'media', None):
+            try:
+                await clients.bot_client.send_file(
+                    admin,
+                    original_message.media,
+                    caption=text,
+                    parse_mode='HTML',
+                    buttons=buttons
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send media with caption to admin {admin}: {e}, fallback to download")
+                with tempfile.TemporaryDirectory() as tmp:
+                    # download via original client and resend
+                    path = await client.download_media(original_message, file=tmp)
+                    await clients.bot_client.send_file(
+                        admin,
+                        path,
+                        caption=text,
+                        parse_mode='HTML',
+                        buttons=buttons
+                    )
+        else:
+            # если медиа нет, просто отправляем текст с кнопками
+            await clients.bot_client.send_message(
+                admin,
+                text,
+                buttons=buttons,
+                parse_mode='HTML'
+            )
 
     logger.info(f"Sent to moderation {key}")
     # schedule automatic rejection after 24 hours

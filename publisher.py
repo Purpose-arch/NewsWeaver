@@ -18,6 +18,8 @@ async def publish(channel_id: int, message_id: int):
         return
 
     text = entry["text"]
+    # append footer link
+    text = f"{text}\n\n📰 <a href=\"https://t.me/fatezhinteresting\">Фатежский Вестник</a>"
     original = entry["message"]
     client = entry.get("client")  # исходный клиент для загрузки media
 
