@@ -1,0 +1,26 @@
+# Ignore Python bytecode and environment
+__pycache__/
+*.py[cod]
+
+# Ignore pip cache dirs
+**/pip-log.txt
+**/pip-delete-this-directory.txt
+
+# Ignore virtualenvs
+venv/
+env/
+
+# Ignore environment files
+.env
+.env.*
+
+# Ignore Dockerfile and docker-compose in ignore
+Dockerfile
+*.docker-compose*.yml
+
+# Ignore Git files
+.git
+.gitignore
+
+# Logs
+*.log 
