@@ -1,5 +1,7 @@
 # moderation.py
 import asyncio
+import os
+import shutil
 from telethon import Button, events
 import config
 import clients
@@ -8,12 +10,16 @@ import media
 import tempfile
 from logger import logger
 
-# pending[(channel_id, message_id)] = {"client":…, "message":…, "text":…, "decided":…}
+# Создаем временную директорию для хранения медиафайлов на время модерации
+TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media")
+os.makedirs(TEMP_MEDIA_DIR, exist_ok=True)
+
+# pending[(channel_id, message_id)] = {"client":…, "message":…, "text":…, "decided":…, "media_paths": […]}
 pending: dict[tuple[int,int], dict] = {}
 
 async def send_for_moderation(channel_id: int, message_id: int, text: str, client, original_message):
     """
-    Рассылает переформулированный текст и вложения всем ADMIN_IDS с Inline-кнопками.
+    Отправляет переформулированный текст и вложения в групповой чат модерации с Inline-кнопками.
     Решение фиксируется — повторные клики игнорируем.
     """
     key = (channel_id, message_id)
@@ -21,7 +27,8 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
         "client": client,
         "message": original_message,
         "text": text,
-        "decided": False
+        "decided": False,
+        "media_paths": []  # Здесь будем хранить пути к сохраненным медиафайлам
     }
 
     buttons = [
@@ -30,89 +37,101 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
             Button.inline("❌ Отклонить", f"reject:{channel_id}:{message_id}")
         ]
     ]
-    for admin in config.ADMIN_IDS:
-        # send media with caption and inline buttons in one message
+    
+    # Используем ID группового чата вместо отправки каждому админу
+    try:
+        # Отправляем медиа и текст в групповой чат модерации
         if getattr(original_message, 'media', None):
             grouped_id = getattr(original_message, 'grouped_id', None)
             entity = getattr(original_message, 'chat_id', None) or getattr(original_message.peer_id, 'channel_id', None)
             try:
                 if grouped_id:
-                     # If it's an album, try sending directly first (might work for bots sometimes)
-                     # Note: Telethon's send_file might not directly support sending existing media objects as an album.
-                     # We rely on the fallback mechanism (download & re-upload) for guaranteed album delivery.
-                     # Attempting direct send first as an optimization, though likely to fail and trigger fallback.
-                     # Fetch messages to get the media list - this might be redundant if direct send fails,
-                     # but needed if we wanted to *attempt* direct send with multiple media objects (which isn't standard API)
-                     msgs = await client.get_messages(entity, limit=100) # Use original client here
-                     media_msgs_in_group = [m for m in msgs if getattr(m, 'grouped_id', None) == grouped_id and m.media]
-                     media_msgs_in_group.sort(key=lambda m: m.id)
-                     # This direct send of multiple media objects is unlikely to work as intended via send_file for albums
-                     # await clients.bot_client.send_file(admin, media_to_send, caption=text, parse_mode='HTML', buttons=buttons)
-                     # Force fallback for albums for now, as direct send_file with list of media objects isn't reliable
+                     # Для альбомов используем загрузку и повторную отправку
                      raise ValueError("Force fallback for album handling")
                 else:
-                    # Try sending single media directly
+                    # Пробуем отправить одиночное медиа напрямую
                     await clients.bot_client.send_file(
-                        admin,
-                        original_message.media, # Use the original media object
+                        config.MODERATION_CHAT_ID,
+                        original_message.media,
                         caption=text,
                         parse_mode='HTML',
                         buttons=buttons
                     )
             except Exception as e:
-                logger.warning(f"Direct send failed for admin {admin}: {e}, fallback to download")
-                with tempfile.TemporaryDirectory() as tmp:
-                    try:
-                        if grouped_id:
-                            # Скачиваем каждое медиа отдельно и собираем пути в список
-                            paths = []
-                            for msg in media_msgs_in_group:
-                                path = await client.download_media(msg, file=tmp)
-                                if path:
-                                    paths.append(path)
-                            
-                            if not paths:
-                                raise ValueError("Не удалось скачать медиафайлы из альбома")
+                logger.warning(f"Direct send failed for moderation chat: {e}, fallback to download")
+                # Создаем уникальную директорию для данного сообщения
+                message_dir = os.path.join(TEMP_MEDIA_DIR, f"{channel_id}_{message_id}")
+                os.makedirs(message_dir, exist_ok=True)
+                
+                try:
+                    if grouped_id:
+                        # Загружаем сообщения альбома
+                        msgs = await client.get_messages(entity, limit=100)
+                        media_msgs_in_group = [m for m in msgs if getattr(m, 'grouped_id', None) == grouped_id and m.media]
+                        media_msgs_in_group.sort(key=lambda m: m.id)
+                        
+                        # Скачиваем каждое медиа отдельно и сохраняем пути
+                        paths = []
+                        for idx, msg in enumerate(media_msgs_in_group):
+                            # Используем индекс для создания уникального имени файла
+                            filename = os.path.join(message_dir, f"media_{idx}")
+                            path = await client.download_media(msg, file=filename)
+                            if path:
+                                paths.append(path)
+                        
+                        if not paths:
+                            raise ValueError("Не удалось скачать медиафайлы из альбома")
+                        
+                        # Сохраняем пути в pending для последующего использования
+                        pending[key]["media_paths"] = paths
 
-                            # Для альбомов отправляем сначала медиа, затем отдельно кнопки
-                            await clients.bot_client.send_file(
-                                admin,
-                                paths, # Send the list of paths
-                                parse_mode='HTML'
-                                # Убрали buttons - Telegram не поддерживает кнопки в альбомах
-                            )
-                            
-                            # Отправляем текстовое сообщение с кнопками отдельно
-                            await clients.bot_client.send_message(
-                                admin,
-                                text, # Отправляем основной текст здесь вместо caption в альбоме
-                                buttons=buttons,
-                                parse_mode='HTML'
-                            )
-                        else:
-                            # Fallback for single media: download via original client and resend via bot
-                            path = await client.download_media(original_message, file=tmp) # Use original client
-                            await clients.bot_client.send_file(
-                                admin,
-                                path,
-                                caption=text,
-                                parse_mode='HTML',
-                                buttons=buttons
-                            )
-                    except Exception as download_send_e:
-                        logger.error(f"Fallback download/send failed for admin {admin} on {key}: {download_send_e}")
+                        # Отправляем альбом и отдельное сообщение с кнопками (т.к. нельзя прикрепить кнопки к альбому)
+                        await clients.bot_client.send_file(
+                            config.MODERATION_CHAT_ID,
+                            paths,
+                            caption=text,
+                            parse_mode='HTML'
+                        )
+                        
+                        # Отправляем сообщение с кнопками модерации отдельно
+                        await clients.bot_client.send_message(
+                            config.MODERATION_CHAT_ID,
+                            f"👆 Модерация для сообщения выше 👆",
+                            buttons=buttons,
+                            parse_mode='HTML'
+                        )
+                    else:
+                        # Для одиночного медиа: скачиваем и сохраняем путь
+                        filename = os.path.join(message_dir, "media")
+                        path = await client.download_media(original_message, file=filename)
+                        
+                        # Сохраняем путь в pending для последующего использования
+                        pending[key]["media_paths"] = [path]
+                        
+                        await clients.bot_client.send_file(
+                            config.MODERATION_CHAT_ID,
+                            path,
+                            caption=text,
+                            parse_mode='HTML',
+                            buttons=buttons
+                        )
+                except Exception as download_send_e:
+                    logger.error(f"Fallback download/send failed for moderation chat on {key}: {download_send_e}")
 
         else:
-            # если медиа нет, просто отправляем текст с кнопками
+            # Если медиа нет, просто отправляем текст с кнопками
             await clients.bot_client.send_message(
-                admin,
+                config.MODERATION_CHAT_ID,
                 text,
                 buttons=buttons,
                 parse_mode='HTML'
             )
 
-    logger.info(f"Sent to moderation {key}")
-    # schedule automatic rejection after 24 hours
+    except Exception as e:
+        logger.error(f"Failed to send message to moderation chat: {e}")
+
+    logger.info(f"Sent to moderation chat {key}")
+    # Планируем автоматическое отклонение через 24 часа
     asyncio.create_task(_auto_reject(key, 24 * 3600))
 
 async def _auto_reject(key, delay: int):
@@ -149,10 +168,23 @@ async def register_handlers():
             await publisher.reject(*key)
             await event.answer("❌ Отклонено", alert=False)
 
-        # delete the moderation message after processing
+        # Удаляем сообщение модерации после обработки
         try:
             await event.delete()
         except Exception as e:
             logger.warning(f"Cannot delete moderation message: {e}")
 
         logger.info(f"Moderator {event.sender_id} - {action} {key}")
+
+def cleanup_media_files(key):
+    """
+    Очищает скачанные медиафайлы для данного ключа
+    """
+    channel_id, message_id = key
+    message_dir = os.path.join(TEMP_MEDIA_DIR, f"{channel_id}_{message_id}")
+    if os.path.exists(message_dir):
+        try:
+            shutil.rmtree(message_dir)
+            logger.info(f"Cleaned up media files for {key}")
+        except Exception as e:
+            logger.warning(f"Error cleaning up media files for {key}: {e}")

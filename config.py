@@ -36,3 +36,8 @@ DB_PASSWORD    = os.getenv("DB_PASSWORD", "")
 DATABASE_URL   = os.getenv("DATABASE_URL") or (
     f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 )
+
+# ID группового чата для модерации новостей
+# Этот чат используется для отправки новостей на модерацию
+# Бот должен быть администратором в этом чате
+MODERATION_CHAT_ID = int(os.getenv("MODERATION_CHAT_ID", "0"))
