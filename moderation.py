@@ -30,12 +30,13 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
         ]
     ]
     for admin in config.ADMIN_IDS:
-        # send reformulated text with inline buttons
+        # first send media attachments if any
+        if original_message.media:
+            await media.send_media(client, admin, original_message)
+        # then send reformulated text with inline buttons
         await clients.bot_client.send_message(
             admin, text, buttons=buttons, parse_mode='HTML'
         )
-        # attach media for review using original client
-        await media.send_media(client, admin, original_message)
 
     logger.info(f"Sent to moderation {key}")
     # schedule automatic rejection after 24 hours
