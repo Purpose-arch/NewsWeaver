@@ -188,18 +188,31 @@ async def register_handlers():
 
         # Удаляем все сообщения модерации после обработки
         try:
-            # Удаляем сообщение, по которому кликнули
-            await event.delete()
+            # Сначала пробуем удалить все сообщения по списку ID
+            msg_ids = entry.get("moderation_msg_ids", [])
+            logger.info(f"Attempting to delete {len(msg_ids)} moderation messages: {msg_ids}")
             
-            # Удаляем остальные сообщения, связанные с этой модерацией
-            for msg_id in entry.get("moderation_msg_ids", []):
+            if msg_ids:
+                # Удаляем все сообщения одним запросом
                 try:
-                    # Пропускаем сообщение, по которому кликнули, если оно есть в списке
-                    if event.message and event.message.id == msg_id:
-                        continue
-                    await clients.bot_client.delete_messages(config.MODERATION_CHAT_ID, msg_id)
-                except Exception as msg_delete_error:
-                    logger.warning(f"Cannot delete moderation message {msg_id}: {msg_delete_error}")
+                    await clients.bot_client.delete_messages(config.MODERATION_CHAT_ID, msg_ids)
+                except Exception as bulk_delete_error:
+                    logger.warning(f"Failed to bulk delete messages, will try one by one: {bulk_delete_error}")
+                    # Если массовое удаление не удалось, пробуем удалять по одному
+                    for msg_id in msg_ids:
+                        try:
+                            await clients.bot_client.delete_messages(config.MODERATION_CHAT_ID, msg_id)
+                            await asyncio.sleep(0.2)  # небольшая задержка между удалениями
+                        except Exception as msg_delete_error:
+                            logger.warning(f"Cannot delete moderation message {msg_id}: {msg_delete_error}")
+            
+            # Отдельно пробуем удалить сообщение, на котором нажали кнопку
+            # это может быть дополнительной гарантией, если оно не в списке
+            if event.message and event.message.id:
+                try:
+                    await event.delete()
+                except Exception as e:
+                    logger.warning(f"Cannot delete callback message: {e}")
         except Exception as e:
             logger.warning(f"Error while deleting moderation messages: {e}")
 
