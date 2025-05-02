@@ -4,6 +4,7 @@ from telethon import Button, events
 import config
 import clients
 import publisher
+import media
 from logger import logger
 
 # pending[(channel_id, message_id)] = {"client":…, "message":…, "text":…, "decided":…}
@@ -29,12 +30,16 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
         ]
     ]
     for admin in config.ADMIN_IDS:
+        # send reformulated text with inline buttons
         await clients.bot_client.send_message(
             admin, text, buttons=buttons, parse_mode='HTML'
         )
+        # attach media for review using original client
+        await media.send_media(client, admin, original_message)
+
     logger.info(f"Sent to moderation {key}")
-    # Автоматическое отклонение через 24 часа
-    asyncio.create_task(_auto_reject(key, 24*3600))
+    # schedule automatic rejection after 24 hours
+    asyncio.create_task(_auto_reject(key, 24 * 3600))
 
 async def _auto_reject(key, delay: int):
     await asyncio.sleep(delay)
@@ -54,6 +59,7 @@ async def register_handlers():
         action, ch, mid = data.split(":")
         key = (int(ch), int(mid))
         entry = pending.get(key)
+
         if not entry:
             await event.answer("Срок истёк или нет данных", alert=True)
             return
