@@ -64,14 +64,16 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
                 with tempfile.TemporaryDirectory() as tmp:
                     try:
                         if grouped_id:
-                            # Fetch messages again or reuse if available
-                            if 'media_msgs_in_group' not in locals(): # Ensure we have the list
-                                msgs = await client.get_messages(entity, limit=100) # Use original client
-                                media_msgs_in_group = [m for m in msgs if getattr(m, 'grouped_id', None) == grouped_id and m.media]
-                                media_msgs_in_group.sort(key=lambda m: m.id)
+                            # Скачиваем каждое медиа отдельно и собираем пути в список
+                            paths = []
+                            for msg in media_msgs_in_group:
+                                path = await client.download_media(msg, file=tmp)
+                                if path:
+                                    paths.append(path)
+                            
+                            if not paths:
+                                raise ValueError("Не удалось скачать медиафайлы из альбома")
 
-                            # Download all media from the album using the original client
-                            paths = await client.download_media(media_msgs_in_group, file=tmp)
                             # Send downloaded files as an album via bot client
                             await clients.bot_client.send_file(
                                 admin,
