@@ -178,14 +178,29 @@ async def regenerate_with_custom_prompt(entry, custom_prompt, replied_msg_id):
         # Обновляем текст в pending
         entry["text"] = new_text
         
-        # Удаляем старое сообщение, на которое был ответ
+        # Удаляем все сообщения, связанные с этой новостью в чате модерации
         try:
-            await clients.bot_client.delete_messages(config.MODERATION_CHAT_ID, replied_msg_id)
-            # Удаляем ID удаленного сообщения из списка
-            if replied_msg_id in entry["moderation_msg_ids"]:
-                entry["moderation_msg_ids"].remove(replied_msg_id)
+            # Копируем список ID сообщений, чтобы избежать проблем при изменении списка во время итерации
+            msg_ids_to_delete = entry["moderation_msg_ids"].copy()
+            if msg_ids_to_delete:
+                logger.info(f"Deleting {len(msg_ids_to_delete)} messages from moderation chat")
+                try:
+                    # Пробуем удалить все сообщения одним запросом
+                    await clients.bot_client.delete_messages(config.MODERATION_CHAT_ID, msg_ids_to_delete)
+                except Exception as e:
+                    logger.warning(f"Failed to bulk delete messages: {e}, trying one by one")
+                    # Если массовое удаление не удалось, удаляем по одному
+                    for msg_id in msg_ids_to_delete:
+                        try:
+                            await clients.bot_client.delete_messages(config.MODERATION_CHAT_ID, msg_id)
+                            await asyncio.sleep(0.2)  # Небольшая задержка между удалениями
+                        except Exception as msg_e:
+                            logger.warning(f"Cannot delete message {msg_id}: {msg_e}")
+                
+                # Очищаем список ID сообщений, так как все они должны быть удалены
+                entry["moderation_msg_ids"] = []
         except Exception as e:
-            logger.warning(f"Cannot delete old message: {e}")
+            logger.warning(f"Error deleting moderation messages: {e}")
         
         # Создаем кнопки для новой новости
         channel_id, message_id = next((k for k, v in pending.items() if v == entry), (None, None))
