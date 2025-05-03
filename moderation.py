@@ -10,6 +10,7 @@ import media
 import tempfile
 from logger import logger
 import direct_news
+import requesty
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media")
@@ -161,6 +162,100 @@ async def _auto_reject(key, delay: int):
         await publisher.reject(*key)
         logger.info(f"Auto-rejected {key}")
 
+async def regenerate_with_custom_prompt(entry, custom_prompt, replied_msg_id):
+    """
+    Регенерирует новость с использованием кастомного промпта и отправляет в чат модерации
+    """
+    try:
+        # Получаем текущий текст новости и применяем кастомный промпт
+        original_text = entry["text"]
+        new_text = await requesty.modify_text_with_custom_prompt(original_text, custom_prompt)
+        
+        if not new_text:
+            logger.error("Failed to regenerate text with custom prompt")
+            return False
+        
+        # Обновляем текст в pending
+        entry["text"] = new_text
+        
+        # Удаляем старое сообщение, на которое был ответ
+        try:
+            await clients.bot_client.delete_messages(config.MODERATION_CHAT_ID, replied_msg_id)
+            # Удаляем ID удаленного сообщения из списка
+            if replied_msg_id in entry["moderation_msg_ids"]:
+                entry["moderation_msg_ids"].remove(replied_msg_id)
+        except Exception as e:
+            logger.warning(f"Cannot delete old message: {e}")
+        
+        # Создаем кнопки для новой новости
+        channel_id, message_id = next((k for k, v in pending.items() if v == entry), (None, None))
+        if not channel_id or not message_id:
+            logger.error("Cannot find key for entry")
+            return False
+            
+        buttons = [
+            [
+                Button.inline("✅ Принять", f"accept:{channel_id}:{message_id}"),
+                Button.inline("❌ Отклонить", f"reject:{channel_id}:{message_id}")
+            ]
+        ]
+        
+        # Отправляем обновленный текст
+        if entry.get("media_paths"):
+            # Если есть медиа
+            if len(entry["media_paths"]) > 1:
+                # Для альбома - отправляем медиа без текста
+                album_msgs = await clients.bot_client.send_file(
+                    config.MODERATION_CHAT_ID,
+                    entry["media_paths"],
+                    parse_mode='HTML'
+                )
+                
+                # При отправке альбома возвращается список сообщений
+                if isinstance(album_msgs, list):
+                    for msg in album_msgs:
+                        if hasattr(msg, 'id'):
+                            entry["moderation_msg_ids"].append(msg.id)
+                elif hasattr(album_msgs, 'id'):
+                    entry["moderation_msg_ids"].append(album_msgs.id)
+                
+                # Отправляем отдельно текст с кнопками
+                text_msg = await clients.bot_client.send_message(
+                    config.MODERATION_CHAT_ID,
+                    new_text,
+                    buttons=buttons,
+                    parse_mode='HTML'
+                )
+                if text_msg:
+                    entry["moderation_msg_ids"].append(text_msg.id)
+            else:
+                # Для одиночного файла
+                msg = await clients.bot_client.send_file(
+                    config.MODERATION_CHAT_ID,
+                    entry["media_paths"][0],
+                    caption=new_text,
+                    parse_mode='HTML',
+                    buttons=buttons
+                )
+                if msg:
+                    entry["moderation_msg_ids"].append(msg.id)
+        else:
+            # Если медиа нет
+            msg = await clients.bot_client.send_message(
+                config.MODERATION_CHAT_ID,
+                new_text,
+                buttons=buttons,
+                parse_mode='HTML'
+            )
+            if msg:
+                entry["moderation_msg_ids"].append(msg.id)
+                
+        logger.info(f"Regenerated news with custom prompt for {channel_id}:{message_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Error regenerating with custom prompt: {e}")
+        return False
+
 async def register_handlers():
     """
     Регистрируем CallbackQuery обработчик на бот-клиенте.
@@ -226,6 +321,59 @@ async def register_handlers():
             logger.warning(f"Error while deleting moderation messages: {e}")
 
         logger.info(f"Moderator {event.sender_id} - {action} {key}")
+
+    # Регистрируем обработчик ответов на сообщения для кастомных промптов
+    @clients.bot_client.on(events.NewMessage(chats=config.MODERATION_CHAT_ID, func=lambda e: e.is_reply))
+    async def custom_prompt_handler(event):
+        try:
+            # Получаем сообщение, на которое был ответ
+            replied_msg = await event.get_reply_message()
+            if not replied_msg:
+                return
+                
+            # Проверяем, что ответ был на сообщение с новостью на модерации
+            # Для этого ищем ID сообщения в списках moderation_msg_ids во всех pending
+            msg_id = replied_msg.id
+            found_entry = None
+            found_key = None
+            
+            for key, entry in pending.items():
+                if msg_id in entry.get("moderation_msg_ids", []) and not entry["decided"]:
+                    found_entry = entry
+                    found_key = key
+                    break
+                    
+            if not found_entry:
+                # Если не нашли, значит ответ не на новость на модерации
+                return
+                
+            # Получаем текст ответа - это кастомный промпт
+            custom_prompt = event.text.strip()
+            if not custom_prompt:
+                return
+                
+            # Удаляем сообщение с кастомным промптом, чтобы не засорять чат
+            try:
+                await event.delete()
+            except Exception as e:
+                logger.warning(f"Cannot delete custom prompt message: {e}")
+                
+            # Регенерируем новость с кастомным промптом
+            channel_id, message_id = found_key
+            logger.info(f"Regenerating news {channel_id}:{message_id} with custom prompt: {custom_prompt}")
+            
+            success = await regenerate_with_custom_prompt(found_entry, custom_prompt, replied_msg.id)
+            if not success:
+                # Если не удалось регенерировать, отправляем сообщение об ошибке
+                await clients.bot_client.send_message(
+                    config.MODERATION_CHAT_ID,
+                    f"❌ Не удалось регенерировать новость с промптом:\n<code>{custom_prompt}</code>",
+                    parse_mode='HTML',
+                    reply_to=replied_msg.id
+                )
+                
+        except Exception as e:
+            logger.error(f"Error in custom prompt handler: {e}")
 
     # Регистрируем обработчики из модуля direct_news
     await direct_news.register_handlers()

@@ -35,6 +35,21 @@ default_prompt = (
     "   ● Всегда отвечай на русском языке.\n"
 )
 
+# Improved prompt template for modifying existing reformulated text
+modification_prompt = (
+    "Ты – HTML-редактор новостей для Telegram.\n\n"
+    "Переформатируй следующий HTML-текст согласно указанным требованиям:\n"
+    "{text}\n\n"
+    "Требования HTML-форматирования:\n"
+    "● Используй только теги: <b>, <i>, <u>, <s>, <blockquote>, <code>, <pre>, <a>, <tg-spoiler>\n"
+    "● Сохрани структуру абзацев с двойным переносом строки (\\n\\n)\n"
+    "● Сохрани начальный эмодзи и символы в начале абзацев\n"
+    "● Прямая речь должна быть в тегах <blockquote>…</blockquote>\n\n"
+    "Основные требования:\n"
+    "{custom_prompt}\n\n"
+    "В ответе только финальный HTML-код."
+)
+
 async def reformulate_text(text: str) -> str:
     """
     Переформулирует текст через Requesty API.
@@ -49,6 +64,46 @@ async def reformulate_text(text: str) -> str:
             "messages": [
                 {"role": "system", "content": default_prompt},
                 {"role": "user",   "content": text}
+            ]
+        }
+        try:
+            response = await asyncio.to_thread(
+                requests.post,
+                url,
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            if response.status_code == 200:
+                data = response.json()
+                choices = data.get("choices") or []
+                if not choices:
+                    raise Exception("No response choices found")
+                return choices[0]["message"]["content"].strip()
+            if response.status_code in (429, 500, 502, 503):
+                logger.warning(f"Key {key} rate-limited/server-error: {response.status_code}")
+                continue
+            logger.error(f"Requesty error {response.status_code}: {response.text}")
+        except Exception as e:
+            logger.error(f"Requesty exception with key {key}: {e}")
+        await asyncio.sleep(1)
+    raise Exception("All Requesty API keys failed")
+
+async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: str) -> str:
+    """
+    Модифицирует уже переформулированный текст с использованием кастомного промпта.
+    """
+    prompt = modification_prompt.format(text=reformulated_text, custom_prompt=custom_prompt)
+    
+    # Используем requests для обращения к Requesty HTTP API
+    for key in config.REQUESTY_APIS:
+        url = "https://router.requesty.ai/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        payload = {
+            "model": "openai/o3-mini-2025-01-31",
+            "messages": [
+                {"role": "system", "content": prompt},
+                {"role": "user",   "content": "Переформатируй текст согласно указанным требованиям."}
             ]
         }
         try:
