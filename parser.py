@@ -3,6 +3,7 @@ from telethon import events
 import config
 import db
 import requesty
+import google_ai
 import moderation
 import clients
 from logger import logger
@@ -26,9 +27,9 @@ async def _process_message(client, message):
         logger.info(f"Skipping empty message {channel_id}:{message_id}")
         return
 
-    # Reformulate text via Requesty
+    # Reformulate text via Google AI API
     try:
-        reformulated = await requesty.reformulate_text(text)
+        reformulated = await google_ai.reformulate_text(text)
     except Exception as e:
         logger.error(f"Reformulation failed for {channel_id}:{message_id}: {e}")
         return

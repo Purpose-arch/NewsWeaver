@@ -15,8 +15,9 @@ API_ID         = int(os.getenv("API_ID"))
 API_HASH       = os.getenv("API_HASH")
 STRING_SESSION = os.getenv("STRING_SESSION")
 
-# Requesty API keys
+# API keys
 REQUESTY_APIS  = parse_list("REQUESTY_APIS", str)
+GOOGLE_AI_API_KEYS = parse_list("GOOGLE_AI_API_KEYS", str)
 # Источники для парсинга
 SOURCE_IDS     = parse_list("SOURCE_IDS", int)
 # Админы для модерации

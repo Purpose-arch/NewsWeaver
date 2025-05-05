@@ -11,6 +11,7 @@ import tempfile
 from logger import logger
 import direct_news
 import requesty
+import google_ai
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media")
@@ -169,7 +170,7 @@ async def regenerate_with_custom_prompt(entry, custom_prompt, replied_msg_id):
     try:
         # Получаем текущий текст новости и применяем кастомный промпт
         original_text = entry["text"]
-        new_text = await requesty.modify_text_with_custom_prompt(original_text, custom_prompt)
+        new_text = await google_ai.modify_text_with_custom_prompt(original_text, custom_prompt)
         
         if not new_text:
             logger.error("Failed to regenerate text with custom prompt")
