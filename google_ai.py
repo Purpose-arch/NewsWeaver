@@ -32,6 +32,8 @@ default_prompt = (
     "\n"
     "5. Выходные данные\n"
     "   ● В ответе только финальный HTML-код новости, начиная с главного эмодзи.\n"
+    "   ● НЕ ДОБАВЛЯЙ ```html в начале и ``` в конце ответа. Никаких маркеров Markdown кода.\n"
+    "   ● Отвечай ЧИСТЫМ HTML без каких-либо дополнительных обозначений или аннотаций.\n"
     "   ● Всегда отвечай на русском языке.\n"
 )
 
@@ -44,32 +46,13 @@ modification_prompt = (
     "● Используй только теги: <b>, <i>, <u>, <s>, <blockquote>, <code>, <pre>, <a>, <tg-spoiler>\n"
     "● Сохрани структуру абзацев с двойным переносом строки (\\n\\n)\n"
     "● Сохрани начальный эмодзи и символы в начале абзацев\n"
-    "● Прямая речь должна быть в тегах <blockquote>…</blockquote>\n\n"
+    "● Прямая речь должна быть в тегах <blockquote>…</blockquote>\n"
+    "● НЕ ДОБАВЛЯЙ ```html в начале и ``` в конце ответа. Никаких маркеров Markdown кода.\n"
+    "● Отвечай ЧИСТЫМ HTML без каких-либо дополнительных обозначений или аннотаций.\n\n"
     "Основные требования:\n"
     "{custom_prompt}\n\n"
     "В ответе только финальный HTML-код."
 )
-
-def remove_code_blocks(text: str) -> str:
-    """
-    Удаляет маркеры блоков кода Markdown (```html и ```) из текста.
-    """
-    if not text:
-        return text
-    
-    lines = text.split('\n')
-    
-    # Проверяем первую строку
-    if lines and (lines[0].strip().startswith('```html') or lines[0].strip().startswith('```')):
-        lines = lines[1:]  # Удаляем первую строку
-        logger.info("Removed markdown code block start marker")
-    
-    # Проверяем последнюю строку
-    if lines and lines[-1].strip() == '```':
-        lines = lines[:-1]  # Удаляем последнюю строку
-        logger.info("Removed markdown code block end marker")
-    
-    return '\n'.join(lines)
 
 async def reformulate_text(text: str) -> str:
     """
@@ -106,9 +89,7 @@ async def reformulate_text(text: str) -> str:
                 # Проверяем и возвращаем ответ
                 if response and hasattr(response, 'text'):
                     logger.info(f"Successfully used model {model_name} with API key {key[:4]}***")
-                    # Очищаем текст от блоков кода Markdown
-                    cleaned_text = remove_code_blocks(response.text.strip())
-                    return cleaned_text
+                    return response.text.strip()
                 
                 logger.warning(f"Empty response from model {model_name} with API key {key[:4]}***")
             except Exception as e:
@@ -152,9 +133,7 @@ async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: 
                 # Проверяем и возвращаем ответ
                 if response and hasattr(response, 'text'):
                     logger.info(f"Successfully used model {model_name} with API key {key[:4]}***")
-                    # Очищаем текст от блоков кода Markdown
-                    cleaned_text = remove_code_blocks(response.text.strip())
-                    return cleaned_text
+                    return response.text.strip()
                 
                 logger.warning(f"Empty response from model {model_name} with API key {key[:4]}***")
             except Exception as e:
