@@ -50,6 +50,27 @@ modification_prompt = (
     "В ответе только финальный HTML-код."
 )
 
+def remove_code_blocks(text: str) -> str:
+    """
+    Удаляет маркеры блоков кода Markdown (```html и ```) из текста.
+    """
+    if not text:
+        return text
+    
+    lines = text.split('\n')
+    
+    # Проверяем первую строку
+    if lines and (lines[0].strip().startswith('```html') or lines[0].strip().startswith('```')):
+        lines = lines[1:]  # Удаляем первую строку
+        logger.info("Removed markdown code block start marker")
+    
+    # Проверяем последнюю строку
+    if lines and lines[-1].strip() == '```':
+        lines = lines[:-1]  # Удаляем последнюю строку
+        logger.info("Removed markdown code block end marker")
+    
+    return '\n'.join(lines)
+
 async def reformulate_text(text: str) -> str:
     """
     Переформулирует текст через Google AI API.
@@ -85,7 +106,9 @@ async def reformulate_text(text: str) -> str:
                 # Проверяем и возвращаем ответ
                 if response and hasattr(response, 'text'):
                     logger.info(f"Successfully used model {model_name} with API key {key[:4]}***")
-                    return response.text.strip()
+                    # Очищаем текст от блоков кода Markdown
+                    cleaned_text = remove_code_blocks(response.text.strip())
+                    return cleaned_text
                 
                 logger.warning(f"Empty response from model {model_name} with API key {key[:4]}***")
             except Exception as e:
@@ -129,7 +152,9 @@ async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: 
                 # Проверяем и возвращаем ответ
                 if response and hasattr(response, 'text'):
                     logger.info(f"Successfully used model {model_name} with API key {key[:4]}***")
-                    return response.text.strip()
+                    # Очищаем текст от блоков кода Markdown
+                    cleaned_text = remove_code_blocks(response.text.strip())
+                    return cleaned_text
                 
                 logger.warning(f"Empty response from model {model_name} with API key {key[:4]}***")
             except Exception as e:
