@@ -18,6 +18,8 @@ STRING_SESSION = os.getenv("STRING_SESSION")
 # API keys
 REQUESTY_APIS  = parse_list("REQUESTY_APIS", str)
 GOOGLE_AI_API_KEYS = parse_list("GOOGLE_AI_API_KEYS", str)
+# Список моделей в порядке приоритета (если одна не работает, используем следующую)
+AI_MODELS = parse_list("AI_MODELS", str) or ["gemini-2.5-pro-exp-03-25", "gemini-1.5-pro", "gemini-1.5-flash"]
 # Источники для парсинга
 SOURCE_IDS     = parse_list("SOURCE_IDS", int)
 # Админы для модерации

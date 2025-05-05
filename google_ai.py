@@ -53,72 +53,94 @@ modification_prompt = (
 async def reformulate_text(text: str) -> str:
     """
     Переформулирует текст через Google AI API.
-    Циклично перебирает ключи GOOGLE_AI_API_KEYS, обрабатывает ошибки.
+    Использует систему fallback: перебирает все модели и ключи.
     """
-    for key in config.GOOGLE_AI_API_KEYS:
-        try:
-            # Настраиваем API ключ
-            genai.configure(api_key=key)
-            
-            # Получаем модель
-            model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
-            
-            # Создаем запрос с системным промптом и пользовательским сообщением
-            chat = model.start_chat(history=[
-                {
-                    "role": "user",
-                    "parts": [default_prompt]
-                },
-            ])
-            
-            # Отправляем запрос и получаем ответ
-            response = await asyncio.to_thread(
-                chat.send_message,
-                text,
-            )
-            
-            # Проверяем и возвращаем ответ
-            if response and hasattr(response, 'text'):
-                return response.text.strip()
-            
-            logger.warning(f"Empty response from Google AI API with key {key}")
-        except Exception as e:
-            logger.error(f"Google AI API exception with key {key}: {e}")
-        
-        # Небольшая задержка перед использованием следующего ключа
-        await asyncio.sleep(1)
+    errors = []
     
-    raise Exception("All Google AI API keys failed")
+    # Перебираем все модели из списка
+    for model_name in config.AI_MODELS:
+        # Для каждой модели пробуем все ключи API
+        for key in config.GOOGLE_AI_API_KEYS:
+            try:
+                # Настраиваем API ключ
+                genai.configure(api_key=key)
+                
+                # Получаем модель
+                model = genai.GenerativeModel(model_name)
+                
+                # Создаем запрос с системным промптом и пользовательским сообщением
+                chat = model.start_chat(history=[
+                    {
+                        "role": "user",
+                        "parts": [default_prompt]
+                    },
+                ])
+                
+                # Отправляем запрос и получаем ответ
+                response = await asyncio.to_thread(
+                    chat.send_message,
+                    text,
+                )
+                
+                # Проверяем и возвращаем ответ
+                if response and hasattr(response, 'text'):
+                    logger.info(f"Successfully used model {model_name} with API key {key[:4]}***")
+                    return response.text.strip()
+                
+                logger.warning(f"Empty response from model {model_name} with API key {key[:4]}***")
+            except Exception as e:
+                error_msg = f"Error with model {model_name}, API key {key[:4]}***: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+            
+            # Небольшая задержка перед использованием следующего ключа
+            await asyncio.sleep(1)
+    
+    # Если все модели и ключи не сработали, выводим подробную информацию об ошибках
+    error_summary = "\n".join(errors)
+    logger.critical(f"All models and API keys failed:\n{error_summary}")
+    raise Exception("All models and API keys failed")
 
 async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: str) -> str:
     """
     Модифицирует уже переформулированный текст с использованием кастомного промпта через Google AI API.
+    Использует систему fallback: перебирает все модели и ключи.
     """
     prompt = modification_prompt.format(text=reformulated_text, custom_prompt=custom_prompt)
+    errors = []
     
-    for key in config.GOOGLE_AI_API_KEYS:
-        try:
-            # Настраиваем API ключ
-            genai.configure(api_key=key)
+    # Перебираем все модели из списка
+    for model_name in config.AI_MODELS:
+        # Для каждой модели пробуем все ключи API
+        for key in config.GOOGLE_AI_API_KEYS:
+            try:
+                # Настраиваем API ключ
+                genai.configure(api_key=key)
+                
+                # Получаем модель
+                model = genai.GenerativeModel(model_name)
+                
+                # Создаем запрос с промптом
+                response = await asyncio.to_thread(
+                    model.generate_content,
+                    prompt,
+                )
+                
+                # Проверяем и возвращаем ответ
+                if response and hasattr(response, 'text'):
+                    logger.info(f"Successfully used model {model_name} with API key {key[:4]}***")
+                    return response.text.strip()
+                
+                logger.warning(f"Empty response from model {model_name} with API key {key[:4]}***")
+            except Exception as e:
+                error_msg = f"Error with model {model_name}, API key {key[:4]}***: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
             
-            # Получаем модель
-            model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
-            
-            # Создаем запрос с системным промптом и пользовательским сообщением
-            response = await asyncio.to_thread(
-                model.generate_content,
-                prompt,
-            )
-            
-            # Проверяем и возвращаем ответ
-            if response and hasattr(response, 'text'):
-                return response.text.strip()
-            
-            logger.warning(f"Empty response from Google AI API with key {key}")
-        except Exception as e:
-            logger.error(f"Google AI API exception with key {key}: {e}")
-        
-        # Небольшая задержка перед использованием следующего ключа
-        await asyncio.sleep(1)
+            # Небольшая задержка перед использованием следующего ключа
+            await asyncio.sleep(1)
     
-    raise Exception("All Google AI API keys failed") 
+    # Если все модели и ключи не сработали, выводим подробную информацию об ошибках
+    error_summary = "\n".join(errors)
+    logger.critical(f"All models and API keys failed:\n{error_summary}")
+    raise Exception("All models and API keys failed") 
