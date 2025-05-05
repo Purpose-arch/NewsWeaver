@@ -1,6 +1,6 @@
 # google_ai.py
 import asyncio
-from google import genai
+import google.generativeai as genai
 import config
 from logger import logger
 
@@ -57,20 +57,24 @@ async def reformulate_text(text: str) -> str:
     """
     for key in config.GOOGLE_AI_API_KEYS:
         try:
-            # Создаем клиент с текущим API ключом
-            client = genai.Client(api_key=key)
+            # Настраиваем API ключ
+            genai.configure(api_key=key)
             
-            # Подготовка сообщений
-            messages = [
-                {"role": "system", "content": default_prompt},
-                {"role": "user", "content": text}
-            ]
+            # Получаем модель
+            model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25')
             
-            # Отправляем запрос к API
+            # Создаем запрос с системным промптом и пользовательским сообщением
+            chat = model.start_chat(history=[
+                {
+                    "role": "user",
+                    "parts": [default_prompt]
+                },
+            ])
+            
+            # Отправляем запрос и получаем ответ
             response = await asyncio.to_thread(
-                client.models.generate_content,
-                model="gemini-2.0-flash",
-                contents=messages
+                chat.send_message,
+                text,
             )
             
             # Проверяем и возвращаем ответ
@@ -94,20 +98,16 @@ async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: 
     
     for key in config.GOOGLE_AI_API_KEYS:
         try:
-            # Создаем клиент с текущим API ключом
-            client = genai.Client(api_key=key)
+            # Настраиваем API ключ
+            genai.configure(api_key=key)
             
-            # Подготовка сообщений
-            messages = [
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": "Переформатируй текст согласно указанным требованиям."}
-            ]
+            # Получаем модель
+            model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25')
             
-            # Отправляем запрос к API
+            # Создаем запрос с системным промптом и пользовательским сообщением
             response = await asyncio.to_thread(
-                client.models.generate_content,
-                model="gemini-2.5-pro-exp-03-25",
-                contents=messages
+                model.generate_content,
+                prompt,
             )
             
             # Проверяем и возвращаем ответ
