@@ -61,7 +61,7 @@ async def reformulate_text(text: str) -> str:
             genai.configure(api_key=key)
             
             # Получаем модель
-            model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25')
+            model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
             
             # Создаем запрос с системным промптом и пользовательским сообщением
             chat = model.start_chat(history=[
@@ -102,7 +102,7 @@ async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: 
             genai.configure(api_key=key)
             
             # Получаем модель
-            model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25')
+            model = genai.GenerativeModel('gemini-2.5-flash-preview-04-17')
             
             # Создаем запрос с системным промптом и пользовательским сообщением
             response = await asyncio.to_thread(
