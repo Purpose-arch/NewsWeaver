@@ -28,7 +28,7 @@ async def main():
     await parser.start_parser()
     
     if vk_active:
-        logger.info("→ Start VK parser with test parsing of last posts")
+        logger.info("→ Start VK parser")
         await vk_parser.start_vk_parser()
     else:
         logger.warning("→ VK parser not started: VK client not initialized or token not provided")

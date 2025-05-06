@@ -67,19 +67,19 @@ async def _process_wall_post(owner_id, post_id, post_data, force_process=False):
 
 async def _fetch_initial_posts():
     """
-    Получает последние посты из каждого паблика ВК при запуске и принудительно отправляет их на обработку
+    Получает последние посты из каждого паблика ВК при запуске
     """
     if not vk_clients.vk_client:
         logger.warning("VK клиент не инициализирован, пропуск начальной загрузки")
         return
     
-    logger.info(f"Начинаю тестовый парсинг последних публикаций из ВК групп: {config.VK_GROUP_IDS}")
+    logger.info(f"Загружаю последние публикации из ВК групп: {config.VK_GROUP_IDS}")
     
     for vk_group_id in config.VK_GROUP_IDS:
         try:
             # Получаем группу с отрицательным ID (формат для сообществ)
             group_id = -abs(vk_group_id)
-            logger.info(f"Тестовый парсинг для группы {vk_group_id} (ID: {group_id})")
+            logger.info(f"Получение последней публикации для группы {vk_group_id} (ID: {group_id})")
             
             # Получаем последнюю публикацию из паблика
             posts = await vk_clients.vk_client.wall.get(
@@ -87,37 +87,23 @@ async def _fetch_initial_posts():
                 count=1
             )
             
-            logger.info(f"Запрос к API VK для группы {vk_group_id} выполнен, получен результат: {posts is not None}")
-            
             if not posts or not posts.get('items') or len(posts['items']) == 0:
                 logger.warning(f"Не удалось получить публикации из группы {vk_group_id}, ответ API: {posts}")
                 continue
                 
             post = posts['items'][0]
             post_id = post.get('id')
-            post_text = post.get('text', '')
-            post_date = post.get('date', '')
             
-            logger.info(f"Получена последняя публикация из группы {vk_group_id}: ID={post_id}, дата={post_date}, текст={post_text[:100]}...")
-            
-            # Принудительно обрабатываем пост, игнорируя проверку на дубликаты
-            logger.info(f"Отправляю пост {post_id} из группы {vk_group_id} на обработку")
-            
-            # Проверка, обрабатывался ли такой пост ранее - для отладки выводим результат
-            is_processed = await db.check_processed(group_id, post_id, source_type="vk")
-            logger.info(f"Проверка на дубликат для поста {group_id}:{post_id}: {'уже обработан' if is_processed else 'не обрабатывался ранее'}")
-            
-            # Отправляем на обработку в любом случае
+            # Обрабатываем пост стандартным способом (с проверкой на дубликаты)
             await _process_wall_post(
                 group_id,
                 post_id,
-                post,
-                force_process=True  # Принудительная обработка
+                post
             )
             
-            logger.info(f"Тестовый парсинг для группы {vk_group_id} завершен")
+            logger.info(f"Обработка последней публикации из группы {vk_group_id} завершена")
         except Exception as e:
-            logger.error(f"Ошибка при тестовом парсинге группы {vk_group_id}: {e}", exc_info=True)
+            logger.error(f"Ошибка при загрузке последней публикации из группы {vk_group_id}: {e}", exc_info=True)
 
 async def _poll_vk_groups():
     """
@@ -185,8 +171,7 @@ async def start_vk_parser():
     
     logger.info(f"Запускаю парсер ВК для {len(config.VK_GROUP_IDS)} групп: {config.VK_GROUP_IDS}")
     
-    # Тестовый запуск парсинга при старте для проверки работоспособности
-    logger.info("Выполняю тестовый парсинг для каждой указанной группы ВК...")
+    # Обрабатываем последние публикации при запуске
     await _fetch_initial_posts()
     
     # Запускаем регулярный опрос групп ВК
