@@ -8,10 +8,15 @@ import moderation
 import os
 from utils import markdown_to_html
 
-async def publish(channel_id: int, message_id: int):
+async def publish(channel_id: int, message_id: int, source_type: str = "telegram"):
     """
     При «Принять» отправляет фото (если есть) с подписью (переформулированным текстом)
     в TARGET_ID, потом чистит pending.
+    
+    Args:
+        channel_id: ID канала/паблика
+        message_id: ID сообщения/поста
+        source_type: Тип источника ("telegram" или "vk")
     """
     key = (channel_id, message_id)
     entry = moderation.pending.get(key)
@@ -24,13 +29,19 @@ async def publish(channel_id: int, message_id: int):
     # append footer link
     text = f"{text}\n\n📰 <a href=\"https://t.me/fatezhinteresting\">Фатежский Вестник</a>"
     
+    # Добавляем префикс, если источник - ВК
+    if source_type == "vk" or entry.get("source_type") == "vk":
+        # Добавляем информацию об источнике
+        group_name = f"(VK-{channel_id})"
+        text = f"<b>Источник: {group_name}</b>\n\n{text}"
+    
     # Проверяем наличие сохраненных путей к медиафайлам
     media_paths = entry.get("media_paths", [])
     
     try:
         if media_paths:
             # Используем уже скачанные файлы
-            logger.info(f"Using pre-downloaded media files for {key}")
+            logger.info(f"Using pre-downloaded media files for {key} (source: {source_type})")
             if len(media_paths) > 1:
                 # Альбом - отправляем несколько файлов
                 await clients.bot_client.send_file(
@@ -48,11 +59,12 @@ async def publish(channel_id: int, message_id: int):
                     parse_mode='HTML'
                 )
         else:
-            # Если по какой-то причине медиа не были скачаны заранее, делаем по старой схеме
+            # Если по какой-то причине медиа не были скачаны заранее
             original = entry["message"]
             client = entry.get("client")
             
-            if getattr(original, "media", None):
+            if source_type == "telegram" and getattr(original, "media", None):
+                # Обработка медиа из Telegram
                 grouped_id = getattr(original, 'grouped_id', None)
                 entity = getattr(original, 'chat_id', None) or getattr(original.peer_id, 'channel_id', None)
                 with tempfile.TemporaryDirectory() as tmp:
@@ -86,15 +98,66 @@ async def publish(channel_id: int, message_id: int):
                             caption=text,
                             parse_mode='HTML'
                         )
+            elif source_type == "vk" and "attachments" in original:
+                # Обработка медиа из ВК, если они не были предварительно скачаны
+                # Этот блок выполняется редко, так как обычно медиа уже скачаны в модерации
+                with tempfile.TemporaryDirectory() as tmp:
+                    import requests
+                    
+                    # Скачиваем фотографии
+                    paths = []
+                    for idx, attachment in enumerate(original.get("attachments", [])):
+                        if attachment.get("type") == "photo":
+                            # Получаем ссылку на фото
+                            photo_sizes = attachment["photo"]["sizes"]
+                            photo_sizes.sort(key=lambda x: x.get("width", 0) * x.get("height", 0), reverse=True)
+                            photo_url = photo_sizes[0]["url"]
+                            
+                            # Скачиваем фото
+                            try:
+                                filename = os.path.join(tmp, f"photo_{idx}.jpg")
+                                response = requests.get(photo_url, stream=True)
+                                if response.status_code == 200:
+                                    with open(filename, 'wb') as file:
+                                        for chunk in response.iter_content(chunk_size=8192):
+                                            file.write(chunk)
+                                    paths.append(filename)
+                            except Exception as e:
+                                logger.error(f"Failed to download VK photo: {e}")
+                    
+                    if paths:
+                        if len(paths) > 1:
+                            # Отправляем альбом
+                            await clients.bot_client.send_file(
+                                config.TARGET_ID,
+                                paths,
+                                caption=text,
+                                parse_mode='HTML'
+                            )
+                        else:
+                            # Отправляем одиночное фото
+                            await clients.bot_client.send_file(
+                                config.TARGET_ID,
+                                paths[0],
+                                caption=text,
+                                parse_mode='HTML'
+                            )
+                    else:
+                        # Если не удалось скачать медиа, отправляем только текст
+                        await clients.bot_client.send_message(
+                            config.TARGET_ID,
+                            text,
+                            parse_mode='HTML'
+                        )
             else:
-                # иначе просто отправляем текст
+                # Иначе просто отправляем текст
                 await clients.bot_client.send_message(
                     config.TARGET_ID,
                     text,
                     parse_mode='HTML'
                 )
     except Exception as e:
-        logger.error(f"Error publishing message {key}: {e}")
+        logger.error(f"Error publishing message {key} (source: {source_type}): {e}")
     finally:
         # Очищаем временные файлы
         try:
@@ -104,11 +167,16 @@ async def publish(channel_id: int, message_id: int):
         
         # очищаем pending и логируем
         moderation.pending.pop(key, None)
-        logger.info(f"Published {key}")
+        logger.info(f"Published {key} (source: {source_type})")
 
-async def reject(channel_id: int, message_id: int):
+async def reject(channel_id: int, message_id: int, source_type: str = "telegram"):
     """
     При «Отклонить» очищаем временные файлы и удаляем из pending.
+    
+    Args:
+        channel_id: ID канала/паблика
+        message_id: ID сообщения/поста
+        source_type: Тип источника ("telegram" или "vk")
     """
     key = (channel_id, message_id)
     
@@ -119,4 +187,4 @@ async def reject(channel_id: int, message_id: int):
         logger.warning(f"Error cleaning media files: {e}")
     
     moderation.pending.pop(key, None)
-    logger.info(f"Rejected {key}")
+    logger.info(f"Rejected {key} (source: {source_type})")

@@ -25,6 +25,11 @@ SOURCE_IDS     = parse_list("SOURCE_IDS", int)
 # Админы для модерации
 ADMIN_IDS      = parse_list("ADMIN_IDS", int)
 
+# VK API settings
+VK_TOKEN      = os.getenv("VK_TOKEN", "")
+VK_GROUP_IDS  = parse_list("VK_GROUP_IDS", int)
+VK_POLL_INTERVAL = int(os.getenv("VK_POLL_INTERVAL", "300"))  # Интервал опроса пабликов ВК в секундах
+
 # Bot API и куда публиковать
 BOT_TOKEN      = os.getenv("BOT_TOKEN")
 TARGET_ID      = int(os.getenv("TARGET_ID", "0"))

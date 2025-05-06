@@ -8,6 +8,8 @@ import moderation
 import requesty
 import publisher
 import direct_news
+import vk_clients
+import vk_parser
 
 async def main():
     logger.info("→ Initialize database")
@@ -16,11 +18,18 @@ async def main():
     logger.info("→ Start Telegram clients")
     await clients.start_clients()
 
+    logger.info("→ Start VK client")
+    vk_active = await vk_clients.start_vk_client()
+
     logger.info("→ Register moderation handlers")
     await moderation.register_handlers()
 
-    logger.info("→ Start parser")
+    logger.info("→ Start Telegram parser")
     await parser.start_parser()
+    
+    if vk_active:
+        logger.info("→ Start VK parser")
+        await vk_parser.start_vk_parser()
 
     logger.info("→ Schedule cleanup_old task")
     asyncio.create_task(db.schedule_cleanup(1))
@@ -31,6 +40,10 @@ async def main():
         clients.bot_client.disconnected,
         clients.user_client.disconnected
     )
+    
+    # Закрываем VK-клиент при завершении
+    if vk_active:
+        await vk_clients.close_vk_client()
 
 if __name__ == "__main__":
     asyncio.run(main())
