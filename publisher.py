@@ -29,12 +29,6 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
     # append footer link
     text = f"{text}\n\n📰 <a href=\"https://t.me/fatezhinteresting\">Фатежский Вестник</a>"
     
-    # Добавляем префикс, если источник - ВК
-    if source_type == "vk" or entry.get("source_type") == "vk":
-        # Добавляем информацию об источнике
-        group_name = f"(VK-{channel_id})"
-        text = f"<b>Источник: {group_name}</b>\n\n{text}"
-    
     # Проверяем наличие сохраненных путей к медиафайлам
     media_paths = entry.get("media_paths", [])
     

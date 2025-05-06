@@ -20,14 +20,14 @@ async def _process_wall_post(owner_id, post_id, post_data, force_process=False):
         force_process: Флаг для принудительной обработки (игнорирует проверку на дубликаты)
     """
     # Формируем уникальный идентификатор поста
-    vk_post_id = f"vk_{owner_id}_{post_id}"
+    post_id_str = f"{owner_id}_{post_id}"
     
     # Проверяем, обрабатывался ли такой пост ранее
     if not force_process and await db.check_processed(owner_id, post_id, source_type="vk"):
-        logger.info(f"Пост {vk_post_id} уже был обработан ранее, пропускаю")
+        logger.info(f"Пост {post_id_str} уже был обработан ранее, пропускаю")
         return
     
-    logger.info(f"Обрабатываю пост {vk_post_id}")
+    logger.info(f"Обрабатываю пост {post_id_str}")
     
     # Помечаем пост как обработанный для избежания дублей
     if not force_process:
@@ -36,23 +36,23 @@ async def _process_wall_post(owner_id, post_id, post_data, force_process=False):
     # Извлекаем текст из поста
     text = post_data.get('text', '').strip()
     if not text:
-        logger.info(f"Пропуск пустого поста {vk_post_id}")
+        logger.info(f"Пропуск пустого поста {post_id_str}")
         return
     
-    logger.info(f"Исходный текст поста {vk_post_id}: {text[:100]}...")
+    logger.info(f"Исходный текст поста {post_id_str}: {text[:100]}...")
     
     # Реформулируем текст через Google AI API
     try:
-        logger.info(f"Начинаю реформулирование текста для поста {vk_post_id}")
+        logger.info(f"Начинаю реформулирование текста для поста {post_id_str}")
         reformulated = await google_ai.reformulate_text(text)
-        logger.info(f"Реформулирование завершено для поста {vk_post_id}: {reformulated[:100]}...")
+        logger.info(f"Реформулирование завершено для поста {post_id_str}: {reformulated[:100]}...")
     except Exception as e:
-        logger.error(f"Ошибка реформулирования для {vk_post_id}: {e}", exc_info=True)
+        logger.error(f"Ошибка реформулирования для {post_id_str}: {e}", exc_info=True)
         return
 
     # Отправляем сообщение на модерацию
     try:
-        logger.info(f"Отправляю пост {vk_post_id} на модерацию")
+        logger.info(f"Отправляю пост {post_id_str} на модерацию")
         await moderation.send_for_moderation(
             owner_id, 
             post_id,
@@ -61,9 +61,9 @@ async def _process_wall_post(owner_id, post_id, post_data, force_process=False):
             post_data,
             source_type="vk"
         )
-        logger.info(f"Пост {vk_post_id} успешно отправлен на модерацию")
+        logger.info(f"Пост {post_id_str} успешно отправлен на модерацию")
     except Exception as e:
-        logger.error(f"Ошибка при отправке на модерацию поста {vk_post_id}: {e}", exc_info=True)
+        logger.error(f"Ошибка при отправке на модерацию поста {post_id_str}: {e}", exc_info=True)
 
 async def _fetch_initial_posts():
     """

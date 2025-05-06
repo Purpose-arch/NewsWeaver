@@ -48,8 +48,8 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
 
     buttons = [
         [
-            Button.inline("✅ Принять", f"accept:{channel_id}:{message_id}:{source_type}"),
-            Button.inline("❌ Отклонить", f"reject:{channel_id}:{message_id}:{source_type}")
+            Button.inline("✅ Принять", f"accept:{channel_id}:{message_id}"),
+            Button.inline("❌ Отклонить", f"reject:{channel_id}:{message_id}")
         ]
     ]
     
@@ -214,7 +214,7 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
                     # Отправляем отдельно текст новости с кнопками модерации
                     text_msg = await clients.bot_client.send_message(
                         config.MODERATION_CHAT_ID,
-                        f"<b>Источник: ВК (группа {channel_id})</b>\n\n{text}",
+                        text,
                         buttons=buttons,
                         parse_mode='HTML'
                     )
@@ -225,7 +225,7 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
                     msg = await clients.bot_client.send_file(
                         config.MODERATION_CHAT_ID,
                         media_paths[0],
-                        caption=f"<b>Источник: ВК (группа {channel_id})</b>\n\n{text}",
+                        caption=text,
                         parse_mode='HTML',
                         buttons=buttons
                     )
@@ -235,7 +235,7 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
                 # Если медиа нет, просто отправляем текст с кнопками
                 msg = await clients.bot_client.send_message(
                     config.MODERATION_CHAT_ID,
-                    f"<b>Источник: ВК (группа {channel_id})</b>\n\n{text}",
+                    text,
                     buttons=buttons,
                     parse_mode='HTML'
                 )
@@ -309,15 +309,10 @@ async def regenerate_with_custom_prompt(entry, custom_prompt, replied_msg_id):
         
         buttons = [
             [
-                Button.inline("✅ Принять", f"accept:{channel_id}:{message_id}:{source_type}"),
-                Button.inline("❌ Отклонить", f"reject:{channel_id}:{message_id}:{source_type}")
+                Button.inline("✅ Принять", f"accept:{channel_id}:{message_id}"),
+                Button.inline("❌ Отклонить", f"reject:{channel_id}:{message_id}")
             ]
         ]
-        
-        # Добавляем префикс для VK, если нужно
-        prefix = ""
-        if source_type == "vk":
-            prefix = f"<b>Источник: ВК (группа {channel_id})</b>\n\n"
         
         # Отправляем обновленный текст
         if entry.get("media_paths"):
@@ -341,7 +336,7 @@ async def regenerate_with_custom_prompt(entry, custom_prompt, replied_msg_id):
                 # Отправляем отдельно текст с кнопками
                 text_msg = await clients.bot_client.send_message(
                     config.MODERATION_CHAT_ID,
-                    prefix + new_text,
+                    new_text,
                     buttons=buttons,
                     parse_mode='HTML'
                 )
@@ -352,7 +347,7 @@ async def regenerate_with_custom_prompt(entry, custom_prompt, replied_msg_id):
                 msg = await clients.bot_client.send_file(
                     config.MODERATION_CHAT_ID,
                     entry["media_paths"][0],
-                    caption=prefix + new_text,
+                    caption=new_text,
                     parse_mode='HTML',
                     buttons=buttons
                 )
@@ -362,7 +357,7 @@ async def regenerate_with_custom_prompt(entry, custom_prompt, replied_msg_id):
             # Если медиа нет
             msg = await clients.bot_client.send_message(
                 config.MODERATION_CHAT_ID,
-                prefix + new_text,
+                new_text,
                 buttons=buttons,
                 parse_mode='HTML'
             )
@@ -390,7 +385,7 @@ async def register_handlers():
                 return
         
         # Обработка обычных переформулированных новостей
-        action, ch, mid, source_type = data.split(":")
+        action, ch, mid = data.split(":")
         key = (int(ch), int(mid))
         entry = pending.get(key)
 
@@ -403,10 +398,10 @@ async def register_handlers():
 
         entry["decided"] = action
         if action == "accept":
-            await publisher.publish(*key, source_type)
+            await publisher.publish(*key, entry.get("source_type", "telegram"))
             await event.answer("✅ Принято", alert=False)
         else:
-            await publisher.reject(*key, source_type)
+            await publisher.reject(*key, entry.get("source_type", "telegram"))
             await event.answer("❌ Отклонено", alert=False)
 
         # Удаляем все сообщения модерации после обработки
@@ -439,7 +434,7 @@ async def register_handlers():
         except Exception as e:
             logger.warning(f"Error while deleting moderation messages: {e}")
 
-        logger.info(f"Moderator {event.sender_id} - {action} {key} (source: {source_type})")
+        logger.info(f"Moderator {event.sender_id} - {action} {key} (source: {entry.get('source_type', 'telegram')})")
 
     # Регистрируем обработчик ответов на сообщения для кастомных промптов
     @clients.bot_client.on(events.NewMessage(chats=config.MODERATION_CHAT_ID, func=lambda e: e.is_reply))
