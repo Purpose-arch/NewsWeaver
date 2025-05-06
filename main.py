@@ -28,8 +28,10 @@ async def main():
     await parser.start_parser()
     
     if vk_active:
-        logger.info("→ Start VK parser")
+        logger.info("→ Start VK parser with test parsing of last posts")
         await vk_parser.start_vk_parser()
+    else:
+        logger.warning("→ VK parser not started: VK client not initialized or token not provided")
 
     logger.info("→ Schedule cleanup_old task")
     asyncio.create_task(db.schedule_cleanup(1))
