@@ -8,32 +8,14 @@ from telethon.sessions import StringSession
 from telethon.tl.types import Message  # Импортируем Message для type hinting
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
+import config  # Импортируем конфигурацию проекта
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-
-API_ID = os.getenv('API_ID')
-API_HASH = os.getenv('API_HASH')
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-SOURCE_CHANNEL_ID_STR = os.getenv('SOURCE_CHANNEL_ID')
-TARGET_CHANNEL_ID_STR = os.getenv('TARGET_CHANNEL_ID')
-SESSION_STRING = os.getenv('SESSION_STRING')
-
-if not all([
-    API_ID, API_HASH, BOT_TOKEN, 
-    SOURCE_CHANNEL_ID_STR, TARGET_CHANNEL_ID_STR,
-    SESSION_STRING
-]):
-    logger.error("Missing one or more environment variables (API_ID, API_HASH, BOT_TOKEN, SOURCE_CHANNEL_ID, TARGET_CHANNEL_ID, SESSION_STRING). Please check your .env file.")
-    exit()
-
-try:
-    API_ID = int(API_ID)
-except ValueError:
-    logger.error("API_ID must be an integer. Please check your .env file.")
-    exit()
+# Инициализируем клиент с StringSession
+alarm_client = TelegramClient(StringSession(config.STRING_SESSION), config.API_ID, config.API_HASH)
+bot = Bot(token=config.BOT_TOKEN)
 
 async def get_entity_id(client, entity_str):
     try:
@@ -50,11 +32,6 @@ async def get_entity_id(client, entity_str):
         except Exception as e:
             logger.error(f"An unexpected error occurred while getting entity '{entity_str}': {e}")
             return None
-
-bot = Bot(token=BOT_TOKEN)
-
-# Инициализируем клиент с StringSession
-client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 # Шаблоны сообщений для ракетной опасности
 alert_message = (
@@ -141,7 +118,7 @@ async def handle_new_message(event: events.NewMessage.Event):
 
     logger.info(f"Processing new message: ID={message.id} from chat={message.chat_id}")
     text_lower = message.text.lower()
-    target_chat = TARGET_CHANNEL_ID_STR # Используем переменную из env
+    target_chat = config.TARGET_ID # Используем общий TARGET_ID для публикации
 
     # Проверка на опасность атаки БПЛА
     if "опасность атаки бпла" in text_lower:
@@ -184,7 +161,7 @@ async def handle_edited_message(event: events.MessageEdited.Event):
          return
     
     text_lower = message.text.lower()
-    target_chat = TARGET_CHANNEL_ID_STR
+    target_chat = config.TARGET_ID # Используем общий TARGET_ID для публикации
     message_id = message.id
     
     # Обработка редактирования сообщения о ракетной опасности
@@ -212,35 +189,74 @@ async def handle_edited_message(event: events.MessageEdited.Event):
         # Если это не одно из отслеживаемых сообщений, просто игнорируем
         pass
 
-async def main():
-    global last_alert_message_id, last_uav_alert_message_id # Указываем, что будем изменять глобальные переменные
+async def start_alarm_bot():
+    """Запускает бот оповещений о ракетной и БПЛА опасности."""
+    global last_alert_message_id, last_uav_alert_message_id 
     
-    async with client:
-        source_entity_id = await get_entity_id(client, SOURCE_CHANNEL_ID_STR)
+    # Проверка наличия необходимых переменных окружения
+    if not config.SOURCE_CHANNEL_ID:
+        logger.error("Missing SOURCE_CHANNEL_ID for alarm bot. Skipping alarm bot startup.")
+        return False
+    
+    if config.TARGET_ID == 0:
+        logger.error("TARGET_ID is not set or invalid. Alarm bot needs a valid target channel ID.")
+        return False
+    
+    try:
+        source_entity_id = await get_entity_id(alarm_client, config.SOURCE_CHANNEL_ID)
         if source_entity_id is None:
-            logger.error(f"Could not resolve source channel: {SOURCE_CHANNEL_ID_STR}. Exiting.")
-            return
+            logger.error(f"Could not resolve source channel: {config.SOURCE_CHANNEL_ID}. Alarm bot not started.")
+            return False
         
         logger.info(f"Successfully resolved source entity: {source_entity_id}")
-        logger.info(f"Target entity for Aiogram: {TARGET_CHANNEL_ID_STR}")
+        logger.info(f"Using target channel ID: {config.TARGET_ID} for publishing alerts")
+        
+        # Запуск клиента, если он еще не запущен
+        if not alarm_client.is_connected():
+            await alarm_client.start()
+            logger.info("Alarm bot Telethon client started")
+        
+        # Запуск aiogram бота
+        await bot.delete_webhook(drop_pending_updates=True)
         
         # Регистрируем раздельные обработчики
-        client.add_event_handler(handle_new_message, events.NewMessage(chats=source_entity_id))
-        client.add_event_handler(handle_edited_message, events.MessageEdited(chats=source_entity_id))
+        alarm_client.add_event_handler(handle_new_message, events.NewMessage(chats=source_entity_id))
+        alarm_client.add_event_handler(handle_edited_message, events.MessageEdited(chats=source_entity_id))
         
-        logger.info("Telethon client starting...")
-        logger.info(f"Listening for events in source channel: {SOURCE_CHANNEL_ID_STR} (resolved ID: {source_entity_id})")
-        logger.info(f"Sending custom alert/off messages to target: {TARGET_CHANNEL_ID_STR}")
-        logger.info("Bot is running. Press Ctrl+C to stop.")
+        logger.info("Alarm bot started: monitoring alerts")
+        logger.info(f"Listening for events in source channel: {config.SOURCE_CHANNEL_ID} (resolved ID: {source_entity_id})")
+        logger.info(f"Sending custom alert/off messages to target: {config.TARGET_ID}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error starting alarm bot: {e}", exc_info=True)
+        return False
 
-        await client.run_until_disconnected()
-
-if __name__ == "__main__":
-    logger.info("Starting message forwarder bot...")
+async def stop_alarm_bot():
+    """Останавливает бот оповещений."""
     try:
-        asyncio.run(main())
+        if alarm_client.is_connected():
+            await alarm_client.disconnect()
+            logger.info("Alarm bot Telethon client disconnected")
+            
+        # Закрываем aiogram бота
+        await bot.session.close()
+        logger.info("Alarm bot aiogram bot closed")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error stopping alarm bot: {e}", exc_info=True)
+        return False
+
+# Прямой запуск скрипта (для тестирования)
+if __name__ == "__main__":
+    logger.info("Starting alarm bot as standalone...")
+    try:
+        asyncio.run(start_alarm_bot())
+        # В автономном режиме ждем бесконечно
+        asyncio.run(alarm_client.run_until_disconnected())
     except KeyboardInterrupt:
-        logger.info("Bot stopped manually.")
+        logger.info("Alarm bot stopped manually.")
     except RuntimeError as e:
         if "Event loop is closed" in str(e):
             logger.info("Event loop closed.")
@@ -249,4 +265,5 @@ if __name__ == "__main__":
     except Exception as e:
         logger.critical(f"Critical error during startup or execution: {e}", exc_info=True)
     finally:
-        logger.info("Bot shutdown complete.") 
+        asyncio.run(stop_alarm_bot())
+        logger.info("Alarm bot shutdown complete.") 

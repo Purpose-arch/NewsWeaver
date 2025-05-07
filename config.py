@@ -41,6 +41,11 @@ VK_POLL_INTERVAL = int(os.getenv("VK_POLL_INTERVAL", "300"))  # Интервал
 BOT_TOKEN      = os.getenv("BOT_TOKEN")
 TARGET_ID      = int(os.getenv("TARGET_ID", "0"))
 
+# Конфигурация для alert bot (rocket/UAV alerts)
+# Канал или чат для мониторинга оповещений о воздушных тревогах
+SOURCE_CHANNEL_ID = os.getenv("SOURCE_CHANNEL_ID", "")
+# Публикация осуществляется в тот же канал, что и основной бот (TARGET_ID)
+
 # PostgreSQL (fallback defaults to avoid None)
 DB_HOST        = os.getenv("DB_HOST", "localhost")
 DB_PORT        = os.getenv("DB_PORT", "5432")

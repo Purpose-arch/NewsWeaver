@@ -10,6 +10,7 @@ import publisher
 import direct_news
 import vk_clients
 import vk_parser
+import alarm  # Импортируем модуль alarm
 
 async def main():
     logger.info("→ Initialize database")
@@ -33,19 +34,30 @@ async def main():
     else:
         logger.warning("→ VK parser not started: VK client not initialized or token not provided")
 
+    logger.info("→ Start Alert Bot (rocket and UAV alerts)")
+    alarm_active = await alarm.start_alarm_bot()
+    if not alarm_active:
+        logger.warning("→ Alert Bot not started: missing config or connection error")
+
     logger.info("→ Schedule cleanup_old task")
     asyncio.create_task(db.schedule_cleanup(1))
 
     logger.info("✅ Bot is up and running")
-    # Await disconnection of bot and single user client
+    
+    # Дожидаемся отключения основных клиентов
     await asyncio.gather(
         clients.bot_client.disconnected,
         clients.user_client.disconnected
     )
     
-    # Закрываем VK-клиент при завершении
+    # Закрываем все активные клиенты
     if vk_active:
+        logger.info("→ Closing VK client")
         await vk_clients.close_vk_client()
+    
+    if alarm_active:
+        logger.info("→ Closing Alert Bot")
+        await alarm.stop_alarm_bot()
 
 if __name__ == "__main__":
     asyncio.run(main())
