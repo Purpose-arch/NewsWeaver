@@ -35,24 +35,20 @@ async def get_entity_id(client, entity_str):
 
 # Шаблоны сообщений для ракетной опасности
 alert_message = (
-    f"🔴 <b>РАКЕТНАЯ ОПАСНОСТЬ!</b>\n\n"
-    f"📰 <a href='https://t.me/fatezhinteresting'>Фатежский Вестник</a>"
+    f"🔴 <b>РАКЕТНАЯ ОПАСНОСТЬ!</b>"
 )
 
 off_message = (
-    f"🟢 <b>ОТБОЙ РАКЕТНОЙ ОПАСНОСТИ!</b>\n\n"
-    f"📰 <a href='https://t.me/fatezhinteresting'>Фатежский Вестник</a>"
+    f"🟢 <b>ОТБОЙ РАКЕТНОЙ ОПАСНОСТИ!</b>"
 )
 
 # Новые шаблоны сообщений для опасности БПЛА
 uav_alert_message = (
-    f"🔴 <b>УГРОЗА БПЛА!</b>\n\n"
-    f"📰 <a href='https://t.me/fatezhinteresting'>Фатежский Вестник</a>"
+    f"🔴 <b>УГРОЗА БПЛА!</b>"
 )
 
 uav_off_message = (
-    f"🟢 <b>ОТБОЙ УГРОЗЫ БПЛА!</b>\n\n"
-    f"📰 <a href='https://t.me/fatezhinteresting'>Фатежский Вестник</a>"
+    f"🟢 <b>ОТБОЙ УГРОЗЫ БПЛА!</b>"
 )
 
 
