@@ -33,13 +33,15 @@ async def init_vk_publish_client():
         # Создаем асинхронную сессию с токеном
         logger.info("Создаю TokenSession для VK API публикации")
         session = TokenSession(access_token=config.VK_PUBLISH_TOKEN)
-        vk_publish_client = API(session)
+        vk_publish_client = API(session, v='5.131')  # Указываем версию API
         
         # Проверяем подключение
         logger.info("Выполняю тестовый запрос к VK API для публикации")
         if config.VK_TARGET_GROUP_ID:
-            group_info = await vk_publish_client.groups.getById(group_id=config.VK_TARGET_GROUP_ID)
-            logger.info(f"Группа для публикации {config.VK_TARGET_GROUP_ID} доступна: {group_info}")
+            # Используем положительный ID для получения информации о группе
+            positive_group_id = abs(config.VK_TARGET_GROUP_ID)
+            group_info = await vk_publish_client.groups.getById(group_id=positive_group_id)
+            logger.info(f"Группа для публикации {positive_group_id} доступна: {group_info}")
             return True
         else:
             logger.warning("VK_TARGET_GROUP_ID не настроен, публикация в ВК невозможна")
