@@ -7,6 +7,7 @@ import google_ai
 import moderation
 import clients
 from logger import logger
+import content_filter
 
 async def _process_message(client, message):
     """
@@ -26,6 +27,16 @@ async def _process_message(client, message):
     if not text.strip():
         logger.info(f"Skipping empty message {channel_id}:{message_id}")
         return
+
+    # Проверяем содержимое на рекламу и объявления о ракетной опасности
+    try:
+        is_filtered = await content_filter.check_content(text)
+        if is_filtered:
+            logger.info(f"Content filtered (ad or alert) {channel_id}:{message_id}")
+            return
+    except Exception as e:
+        logger.error(f"Content filter check failed for {channel_id}:{message_id}: {e}")
+        # Если проверка не удалась, продолжаем обработку (не фильтруем)
 
     # Reformulate text via Google AI API
     try:
