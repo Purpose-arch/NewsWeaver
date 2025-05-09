@@ -22,11 +22,11 @@ async def start_vk_client():
         # Создаем асинхронную сессию с токеном
         logger.info("Создаю TokenSession для VK API")
         session = TokenSession(access_token=config.VK_TOKEN)
-        vk_client = API(session, v='5.131')  # Указываем версию API
+        vk_client = API(session)  # Библиотека не поддерживает параметр v в конструкторе
         
         # Проверяем подключение запросом информации о пользователе с ID 1
         logger.info("Выполняю тестовый запрос к VK API (users.get)")
-        test = await vk_client.users.get(user_ids=1)
+        test = await vk_client.users.get(user_ids=1, v='5.131')  # Передаем версию API в запрос
         
         logger.info(f"Тестовый запрос к VK API выполнен, ответ: {test}")
         
@@ -44,7 +44,7 @@ async def start_vk_client():
                         positive_group_id = abs(group_id)
                         
                         # Проверяем доступность группы
-                        group_info = await vk_client.groups.getById(group_id=positive_group_id)
+                        group_info = await vk_client.groups.getById(group_id=positive_group_id, v='5.131')  # Передаем версию API в запрос
                         logger.info(f"Группа {positive_group_id} доступна: {group_info}")
                     except Exception as e:
                         logger.error(f"Ошибка при проверке группы {group_id}: {e}")

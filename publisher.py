@@ -33,14 +33,14 @@ async def init_vk_publish_client():
         # Создаем асинхронную сессию с токеном
         logger.info("Создаю TokenSession для VK API публикации")
         session = TokenSession(access_token=config.VK_PUBLISH_TOKEN)
-        vk_publish_client = API(session, v='5.131')  # Указываем версию API
+        vk_publish_client = API(session)  # Библиотека не поддерживает параметр v в конструкторе
         
         # Проверяем подключение
         logger.info("Выполняю тестовый запрос к VK API для публикации")
         if config.VK_TARGET_GROUP_ID:
             # Используем положительный ID для получения информации о группе
             positive_group_id = abs(config.VK_TARGET_GROUP_ID)
-            group_info = await vk_publish_client.groups.getById(group_id=positive_group_id)
+            group_info = await vk_publish_client.groups.getById(group_id=positive_group_id, v='5.131')  # Передаем версию API в запрос
             logger.info(f"Группа для публикации {positive_group_id} доступна: {group_info}")
             return True
         else:
@@ -100,7 +100,7 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
             for media_path in media_paths:
                 try:
                     # Получаем URL сервера для загрузки фото
-                    upload_url = await vk_publish_client.photos.getWallUploadServer(group_id=-group_id)
+                    upload_url = await vk_publish_client.photos.getWallUploadServer(group_id=-group_id, v='5.131')  # Передаем версию API в запрос
                     
                     # Читаем файл и отправляем на сервер ВК
                     with open(media_path, 'rb') as f:
@@ -117,7 +117,8 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
                         group_id=-group_id,
                         photo=upload_data['photo'],
                         server=upload_data['server'],
-                        hash=upload_data['hash']
+                        hash=upload_data['hash'],
+                        v='5.131'  # Передаем версию API в запрос
                     )
                     
                     # Добавляем фото в прикрепления
@@ -132,7 +133,8 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
         params = {
             'owner_id': group_id,
             'message': clean_text,
-            'from_group': 1  # Публикация от имени группы
+            'from_group': 1,  # Публикация от имени группы
+            'v': '5.131'  # Передаем версию API в запрос
         }
         
         if attachments:

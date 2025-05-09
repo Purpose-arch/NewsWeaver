@@ -53,6 +53,15 @@ async def init_db():
             
     logger.info("Database initialized and processed_messages table ready.")
 
+async def close_db():
+    """
+    Закрывает соединение с базой данных
+    """
+    global pool
+    if pool:
+        await pool.close()
+        logger.info("Database connection pool closed")
+
 async def check_processed(channel_id: int, message_id: int, source_type: str = "telegram") -> bool:
     """
     Check if a message (channel_id, message_id) has already been processed.

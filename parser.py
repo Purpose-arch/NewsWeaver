@@ -52,8 +52,8 @@ async def _fetch_initial_history():
     """
     Process the last message from each source channel on startup.
     """
-    # Use single user_client to fetch last message from each source
-    client = clients.user_client
+    # Use single tg_client to fetch last message from each source
+    client = clients.tg_client
     for source_id in config.SOURCE_IDS:
         try:
             msgs = await client.get_messages(source_id, limit=1)
@@ -78,8 +78,8 @@ async def start_parser():
                 logger.error(f"Error processing message: {ex}")
         return handler
 
-    clients.user_client.add_event_handler(
-        _make_handler(clients.user_client),
+    clients.tg_client.add_event_handler(
+        _make_handler(clients.tg_client),
         events.NewMessage(chats=config.SOURCE_IDS)
     )
     logger.info("Parser is listening to new messages.") 
