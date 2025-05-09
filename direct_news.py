@@ -227,7 +227,7 @@ async def publish_direct_news(message_id: int):
         # Публикуем в ВК после успешной публикации в Telegram
         if telegram_success and config.VK_TARGET_GROUP_ID:
             logger.info(f"Публикую прямую новость в ВК {message_id}")
-            # Передаем текст без ссылки для ВК
+            # Передаем текст без ссылки для ВК и все пути к медиа одним списком
             await publisher._publish_to_vk(vk_text, media_paths)
             logger.info(f"Published direct news {message_id} to VK")
             

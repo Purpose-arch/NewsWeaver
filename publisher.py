@@ -87,7 +87,7 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
         clean_text = text.replace("<b>", "").replace("</b>", "")
         clean_text = clean_text.replace("<i>", "").replace("</i>", "")
         clean_text = clean_text.replace("<u>", "").replace("</u>", "")
-        clean_text = clean_text.replace("<s>", "").replace("</s>", "")
+        clean_text = clean_text.replace("", "").replace("</", "")
         clean_text = clean_text.replace("<br>", "\n")
         # Очищаем гиперссылки
         import re
@@ -95,39 +95,86 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
         
         attachments = []
         
-        # Загружаем фотографии, если они есть
+        # Загружаем медиафайлы, если они есть
         if media_paths:
+            logger.info(f"Начинаю загрузку {len(media_paths)} медиафайлов в ВК")
+            
             for media_path in media_paths:
                 try:
-                    # Получаем URL сервера для загрузки фото
-                    upload_url = await vk_publish_client.photos.getWallUploadServer(group_id=-group_id, v='5.131')  # Передаем версию API в запрос
+                    # Определяем тип файла
+                    file_ext = os.path.splitext(media_path)[1].lower()
                     
-                    # Читаем файл и отправляем на сервер ВК
-                    with open(media_path, 'rb') as f:
-                        form_data = aiohttp.FormData()
-                        form_data.add_field('photo', f)
+                    # Загрузка фото
+                    if file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
+                        logger.info(f"Загружаю фото: {media_path}")
+                        # Получаем URL сервера для загрузки фото
+                        upload_url = await vk_publish_client.photos.getWallUploadServer(group_id=-group_id, v='5.131')
+                        logger.info(f"Получен upload_url для фото: {upload_url['upload_url']}")
                         
-                        # Используем стандартную сессию aiohttp для загрузки файла
-                        async with aiohttp.ClientSession() as session:
-                            async with session.post(upload_url['upload_url'], data=form_data) as response:
-                                upload_data = await response.json()
+                        # Читаем файл и отправляем на сервер ВК
+                        with open(media_path, 'rb') as f:
+                            form_data = aiohttp.FormData()
+                            form_data.add_field('photo', f)
+                            
+                            # Используем стандартную сессию aiohttp для загрузки файла
+                            async with aiohttp.ClientSession() as session:
+                                async with session.post(upload_url['upload_url'], data=form_data) as response:
+                                    upload_data = await response.json()
+                                    logger.info(f"Ответ сервера загрузки фото: {upload_data}")
+                        
+                        # Сохраняем загруженное фото
+                        saved_photo = await vk_publish_client.photos.saveWallPhoto(
+                            group_id=-group_id,
+                            photo=upload_data['photo'],
+                            server=upload_data['server'],
+                            hash=upload_data['hash'],
+                            v='5.131'
+                        )
+                        logger.info(f"Фото сохранено: {saved_photo}")
+                        
+                        # Добавляем фото в прикрепления
+                        photo_id = saved_photo[0]['id']
+                        owner_id = saved_photo[0]['owner_id']
+                        attachments.append(f"photo{owner_id}_{photo_id}")
                     
-                    # Сохраняем загруженное фото
-                    saved_photo = await vk_publish_client.photos.saveWallPhoto(
-                        group_id=-group_id,
-                        photo=upload_data['photo'],
-                        server=upload_data['server'],
-                        hash=upload_data['hash'],
-                        v='5.131'  # Передаем версию API в запрос
-                    )
-                    
-                    # Добавляем фото в прикрепления
-                    photo_id = saved_photo[0]['id']
-                    owner_id = saved_photo[0]['owner_id']
-                    attachments.append(f"photo{owner_id}_{photo_id}")
-                    
+                    # Загрузка видео
+                    elif file_ext in ['.mp4', '.avi', '.mov', '.wmv', '.3gp', '.mkv']:
+                        logger.info(f"Загружаю видео: {media_path}")
+                        # Получаем URL для загрузки видео
+                        video_upload = await vk_publish_client.video.save(
+                            group_id=-group_id,
+                            name=f"Video {os.path.basename(media_path)}",
+                            description="Uploaded via API",
+                            is_private=0,
+                            wallpost=0,  # Не публиковать на стене сразу
+                            v='5.131'
+                        )
+                        logger.info(f"Получены данные для загрузки видео: {video_upload}")
+                        
+                        # Читаем файл и отправляем на сервер ВК
+                        with open(media_path, 'rb') as f:
+                            form_data = aiohttp.FormData()
+                            # Добавляем все необходимые поля из ответа video.save
+                            for key, value in video_upload.items():
+                                if key != 'upload_url':
+                                    form_data.add_field(key, str(value))
+                            form_data.add_field('video_file', f)
+                            
+                            # Используем стандартную сессию aiohttp для загрузки файла
+                            async with aiohttp.ClientSession() as session:
+                                async with session.post(video_upload['upload_url'], data=form_data) as response:
+                                    response_text = await response.text()
+                                    logger.info(f"Ответ сервера загрузки видео: {response_text}")
+                        
+                        # Добавляем видео в прикрепления
+                        video_id = video_upload['video_id']
+                        owner_id = video_upload['owner_id']
+                        attachments.append(f"video{owner_id}_{video_id}")
+                    else:
+                        logger.warning(f"Неподдерживаемый тип файла: {file_ext} для {media_path}")
+                        
                 except Exception as e:
-                    logger.error(f"Ошибка при загрузке фото в ВК: {e}")
+                    logger.error(f"Ошибка при загрузке медиафайла в ВК: {e}", exc_info=True)
         
         # Публикуем запись на стене
         params = {
@@ -138,9 +185,12 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
         }
         
         if attachments:
+            # Добавляем все вложения в один пост
             params['attachments'] = ','.join(attachments)
+            logger.info(f"Добавлены вложения: {params['attachments']}")
         
         # Отправляем запрос на публикацию
+        logger.info(f"Публикую запись в ВК с параметрами: {params}")
         result = await vk_publish_client.wall.post(**params)
         
         if result and 'post_id' in result:
