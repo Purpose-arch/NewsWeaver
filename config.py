@@ -28,6 +28,8 @@ ADMIN_IDS      = parse_list("ADMIN_IDS", int)
 # VK API settings
 VK_TOKEN      = os.getenv("VK_TOKEN", "")
 VK_GROUP_IDS  = parse_list("VK_GROUP_IDS", int)
+# ID паблика ВК для публикации принятых новостей
+VK_TARGET_GROUP_ID = int(os.getenv("VK_TARGET_GROUP_ID", "0"))
 
 # Добавляем тестовую группу, если не указано ни одной группы
 if not VK_GROUP_IDS and VK_TOKEN:

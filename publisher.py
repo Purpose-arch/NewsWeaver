@@ -6,7 +6,97 @@ import media
 import clients
 import moderation
 import os
+import vk_clients
 from utils import markdown_to_html
+import asyncio
+import aiohttp
+import io
+
+async def _publish_to_vk(text, media_paths=None, vk_data=None):
+    """
+    Публикует сообщение в паблик ВК
+    
+    Args:
+        text: Текст сообщения (без HTML)
+        media_paths: Список путей к медиафайлам
+        vk_data: Данные для публикации из ВК (если источник - ВК)
+    """
+    if not vk_clients.vk_client or not config.VK_TARGET_GROUP_ID:
+        logger.warning("VK клиент не инициализирован или не указан VK_TARGET_GROUP_ID, публикация в ВК пропущена")
+        return False
+    
+    try:
+        # Формируем ID группы (отрицательный для формата API ВК)
+        group_id = -abs(config.VK_TARGET_GROUP_ID)
+        
+        # Очищаем текст от HTML-тегов для публикации в ВК
+        clean_text = text.replace("<b>", "").replace("</b>", "")
+        clean_text = clean_text.replace("<i>", "").replace("</i>", "")
+        clean_text = clean_text.replace("<u>", "").replace("</u>", "")
+        clean_text = clean_text.replace("<s>", "").replace("</s>", "")
+        clean_text = clean_text.replace("<br>", "\n")
+        # Очищаем гиперссылки
+        import re
+        clean_text = re.sub(r'<a href="[^"]+">([^<]+)</a>', r'\1', clean_text)
+        
+        attachments = []
+        
+        # Загружаем фотографии, если они есть
+        if media_paths:
+            for media_path in media_paths:
+                try:
+                    # Получаем URL сервера для загрузки фото
+                    upload_url = await vk_clients.vk_client.photos.getWallUploadServer(group_id=-group_id)
+                    
+                    # Читаем файл и отправляем на сервер ВК
+                    with open(media_path, 'rb') as f:
+                        form_data = aiohttp.FormData()
+                        form_data.add_field('photo', f)
+                        
+                        # Используем стандартную сессию aiohttp для загрузки файла
+                        async with aiohttp.ClientSession() as session:
+                            async with session.post(upload_url['upload_url'], data=form_data) as response:
+                                upload_data = await response.json()
+                    
+                    # Сохраняем загруженное фото
+                    saved_photo = await vk_clients.vk_client.photos.saveWallPhoto(
+                        group_id=-group_id,
+                        photo=upload_data['photo'],
+                        server=upload_data['server'],
+                        hash=upload_data['hash']
+                    )
+                    
+                    # Добавляем фото в прикрепления
+                    photo_id = saved_photo[0]['id']
+                    owner_id = saved_photo[0]['owner_id']
+                    attachments.append(f"photo{owner_id}_{photo_id}")
+                    
+                except Exception as e:
+                    logger.error(f"Ошибка при загрузке фото в ВК: {e}")
+        
+        # Публикуем запись на стене
+        params = {
+            'owner_id': group_id,
+            'message': clean_text,
+            'from_group': 1  # Публикация от имени группы
+        }
+        
+        if attachments:
+            params['attachments'] = ','.join(attachments)
+        
+        # Отправляем запрос на публикацию
+        result = await vk_clients.vk_client.wall.post(**params)
+        
+        if result and 'post_id' in result:
+            logger.info(f"Сообщение успешно опубликовано в ВК, post_id: {result['post_id']}")
+            return True
+        else:
+            logger.warning(f"Странный ответ API при публикации в ВК: {result}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Ошибка при публикации в ВК: {e}", exc_info=True)
+        return False
 
 async def publish(channel_id: int, message_id: int, source_type: str = "telegram"):
     """
@@ -31,6 +121,7 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
     
     # Проверяем наличие сохраненных путей к медиафайлам
     media_paths = entry.get("media_paths", [])
+    telegram_success = False
     
     try:
         if media_paths:
@@ -52,6 +143,7 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                     caption=text,
                     parse_mode='HTML'
                 )
+            telegram_success = True
         else:
             # Если по какой-то причине медиа не были скачаны заранее
             original = entry["message"]
@@ -84,6 +176,10 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                             caption=text,
                             parse_mode='HTML'
                         )
+                        telegram_success = True
+                        
+                        # Сохраняем пути для публикации в ВК
+                        media_paths = paths.copy()
                     else:
                         path = await client.download_media(original, file=tmp)
                         await clients.bot_client.send_file(
@@ -92,6 +188,10 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                             caption=text,
                             parse_mode='HTML'
                         )
+                        telegram_success = True
+                        
+                        # Сохраняем путь для публикации в ВК
+                        media_paths = [path]
             elif source_type == "vk" and "attachments" in original:
                 # Обработка медиа из ВК, если они не были предварительно скачаны
                 # Этот блок выполняется редко, так как обычно медиа уже скачаны в модерации
@@ -136,6 +236,10 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                                 caption=text,
                                 parse_mode='HTML'
                             )
+                        telegram_success = True
+                        
+                        # Сохраняем пути для публикации в ВК
+                        media_paths = paths.copy()
                     else:
                         # Если не удалось скачать медиа, отправляем только текст
                         await clients.bot_client.send_message(
@@ -143,6 +247,7 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                             text,
                             parse_mode='HTML'
                         )
+                        telegram_success = True
             else:
                 # Иначе просто отправляем текст
                 await clients.bot_client.send_message(
@@ -150,6 +255,14 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                     text,
                     parse_mode='HTML'
                 )
+                telegram_success = True
+        
+        # Публикуем в ВК после успешной публикации в Telegram
+        if telegram_success and config.VK_TARGET_GROUP_ID:
+            logger.info(f"Публикую сообщение в ВК {key} (source: {source_type})")
+            vk_data = entry["message"] if source_type == "vk" else None
+            await _publish_to_vk(text, media_paths, vk_data)
+        
     except Exception as e:
         logger.error(f"Error publishing message {key} (source: {source_type}): {e}")
     finally:
