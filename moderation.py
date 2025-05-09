@@ -430,9 +430,6 @@ async def register_handlers():
                 # Проверяем, есть ли у event доступ к message (может отсутствовать)
                 if hasattr(event, 'message') and event.message and event.message.id:
                     await event.delete()
-                else:
-                    # Альтернативный способ удаления для callback_query
-                    await event.answer("", alert=False)
             except Exception as e:
                 logger.warning(f"Error while deleting moderation messages: {e}")
         except Exception as e:
