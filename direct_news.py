@@ -95,8 +95,19 @@ async def process_direct_message(message):
     if message_id in direct_news:
         return
     
+    # Создаем кнопки для модерации
+    buttons = [
+        [
+            Button.inline("✅ Отправить", f"direct_accept:{message_id}"),
+            Button.inline("❌ Отменить", f"direct_reject:{message_id}")
+        ]
+    ]
+    
     # Создаем временную директорию для хранения медиа, если есть
     media_paths = []
+    moderation_msg_ids = []
+    
+    # Обрабатываем медиа, если оно есть
     if message.media:
         logger.info(f"Прямое сообщение {message_id} содержит медиа")
         try:
@@ -118,6 +129,27 @@ async def process_direct_message(message):
                     logger.info(f"Первое медиа из альбома сохранено по пути: {path}")
                     media_paths.append(path)
                 
+                # Для альбомов: отправляем сначала медиа без текста и кнопок
+                # (так как первое сообщение может быть только одно медиа из альбома)
+                if path:
+                    media_msg = await clients.bot_client.send_file(
+                        config.MODERATION_CHAT_ID,
+                        path,
+                        parse_mode='HTML'
+                    )
+                    if media_msg:
+                        moderation_msg_ids.append(media_msg.id)
+                
+                # Отправляем текст с кнопками отдельно для альбома
+                text_msg = await clients.bot_client.send_message(
+                    config.MODERATION_CHAT_ID,
+                    text or "Отправить этот альбом в канал?",
+                    buttons=buttons,
+                    parse_mode='HTML'
+                )
+                if text_msg:
+                    moderation_msg_ids.append(text_msg.id)
+                
                 logger.info(f"Зарегистрирован новый альбом {grouped_id}, первое сообщение {message_id}")
             else:
                 # Одиночное медиа
@@ -127,56 +159,72 @@ async def process_direct_message(message):
                 if path:
                     logger.info(f"Медиа сохранено по пути: {path}")
                     media_paths.append(path)
+                
+                # Для одиночного медиа, отправляем его вместе с текстом и кнопками
+                msg = await clients.bot_client.send_file(
+                    config.MODERATION_CHAT_ID,
+                    path,
+                    caption=text or "Отправить это сообщение в канал?",
+                    parse_mode='HTML',
+                    buttons=buttons
+                )
+                if msg:
+                    moderation_msg_ids.append(msg.id)
         except Exception as e:
             logger.error(f"Error downloading media from direct message {message_id}: {e}", exc_info=True)
+            
+            # В случае ошибки, отправляем только текст с кнопками
+            try:
+                reply_msg = await clients.bot_client.send_message(
+                    config.MODERATION_CHAT_ID,
+                    text or "Отправить это сообщение в канал? (Не удалось загрузить медиа)",
+                    reply_to=message_id,
+                    buttons=buttons
+                )
+                if reply_msg:
+                    moderation_msg_ids.append(reply_msg.id)
+            except Exception as e2:
+                logger.error(f"Error sending fallback message for {message_id}: {e2}", exc_info=True)
+                return
+    else:
+        # Если нет медиа, просто отправляем текст с кнопками
+        try:
+            reply_msg = await clients.bot_client.send_message(
+                config.MODERATION_CHAT_ID,
+                text or "Отправить это сообщение в канал?",
+                reply_to=message_id,
+                buttons=buttons
+            )
+            if reply_msg:
+                moderation_msg_ids.append(reply_msg.id)
+        except Exception as e:
+            logger.error(f"Failed to send text message for moderation {message_id}: {e}", exc_info=True)
+            return
     
-    # Пропускаем пустые сообщения без медиа
+    # Пропускаем пустые сообщения без медиа и без текста
     if not text and not media_paths:
         logger.info(f"Игнорирую пустое сообщение без медиа: {message_id}")
+        # Очищаем директорию, если она была создана
+        cleanup_media_files_direct(message_id)
         return
     
-    # Создаем кнопки для модерации
-    buttons = [
-        [
-            Button.inline("✅ Отправить", f"direct_accept:{message_id}"),
-            Button.inline("❌ Отменить", f"direct_reject:{message_id}")
-        ]
-    ]
+    # Сохраняем информацию о сообщении
+    direct_news[message_id] = {
+        "message": message,
+        "text": text,
+        "decided": False,
+        "media_paths": media_paths,
+        "moderation_msg_ids": moderation_msg_ids,
+        "reply_to_id": message_id
+    }
     
-    # Отправляем ответ с вопросом и кнопками
-    try:
-        reply_msg = await clients.bot_client.send_message(
-            config.MODERATION_CHAT_ID,
-            "Отправить это сообщение в канал?",
-            reply_to=message_id,
-            buttons=buttons
-        )
-        
-        # Сохраняем информацию о сообщении
-        direct_news[message_id] = {
-            "message": message,
-            "text": text,
-            "decided": False,
-            "media_paths": media_paths,
-            "moderation_msg_ids": [reply_msg.id],
-            "reply_to_id": message_id
-        }
-        
-        if media_paths:
-            logger.info(f"Added direct message {message_id} for moderation with {len(media_paths)} media files: {media_paths}")
-        else:
-            logger.info(f"Added direct message {message_id} for moderation (text only)")
-        
-        # Планируем автоматическое отклонение через 24 часа
-        asyncio.create_task(_auto_reject_direct(message_id, 24 * 3600))
-    except Exception as e:
-        logger.error(f"Failed to process direct message {message_id}: {e}", exc_info=True)
-        # Очищаем скачанные файлы в случае ошибки
-        cleanup_media_files_direct(message_id)
-        
-        # Удаляем запись из отслеживания альбомов, если это был альбом
-        if grouped_id and grouped_id in album_tracking and album_tracking[grouped_id] == message_id:
-            del album_tracking[grouped_id]
+    if media_paths:
+        logger.info(f"Added direct message {message_id} for moderation with {len(media_paths)} media files: {media_paths}")
+    else:
+        logger.info(f"Added direct message {message_id} for moderation (text only)")
+    
+    # Планируем автоматическое отклонение через 24 часа
+    asyncio.create_task(_auto_reject_direct(message_id, 24 * 3600))
 
 async def _auto_reject_direct(message_id, delay: int):
     """
@@ -219,11 +267,12 @@ async def process_direct_callback(event):
         await reject_direct_news(message_id)
         await event.answer("❌ Отменено", alert=False)
     
-    # Удаляем сообщение с кнопками модерации
+    # Удаляем сообщения модерации
     try:
-        await event.delete()
+        for msg_id in entry.get("moderation_msg_ids", []):
+            await clients.bot_client.delete_messages(config.MODERATION_CHAT_ID, msg_id)
     except Exception as e:
-        logger.warning(f"Cannot delete direct moderation message: {e}")
+        logger.warning(f"Cannot delete moderation messages: {e}")
         
     logger.info(f"Admin {event.sender_id} - {action} for direct message {message_id}")
     
@@ -257,59 +306,55 @@ async def publish_direct_news(message_id: int):
     # Для ВК используем текст без ссылки на паблик
     vk_text = text
     
-    # Получаем полный список всех медиафайлов из директории
+    # Получаем все медиафайлы из директории сообщения
     message_dir = os.path.join(TEMP_MEDIA_DIR, f"direct_{message_id}")
-    all_media_files = []
+    media_paths = []
     
     if os.path.exists(message_dir):
         try:
-            # Используем glob для поиска всех файлов в директории
-            pattern = os.path.join(message_dir, "media_msg_*")
-            all_media_files = glob.glob(pattern)
-            logger.info(f"Найдено {len(all_media_files)} медиафайлов в директории {message_dir} по шаблону {pattern}")
-            logger.info(f"Медиафайлы: {all_media_files}")
+            # Собираем все медиафайлы по маске
+            media_paths = glob.glob(os.path.join(message_dir, "media_msg_*"))
+            logger.info(f"Найдено {len(media_paths)} медиафайлов в директории {message_dir}")
         except Exception as e:
             logger.error(f"Ошибка при поиске медиафайлов: {e}", exc_info=True)
     
-    # Если не нашли файлы по шаблону, используем обычный список файлов
-    if not all_media_files and entry.get("media_paths"):
-        all_media_files = entry.get("media_paths", [])
-        logger.info(f"Использую сохраненный список медиафайлов: {all_media_files}")
+    # Если в директории нет файлов, используем список из entry
+    if not media_paths and entry.get("media_paths"):
+        media_paths = entry.get("media_paths", [])
+        logger.info(f"Использую сохраненный список медиафайлов: {media_paths}")
     
-    # Проверяем существование файлов
-    existing_files = []
-    for path in all_media_files:
+    # Проверяем существование файлов перед отправкой
+    existing_media_paths = []
+    for path in media_paths:
         if os.path.exists(path):
-            existing_files.append(path)
-            logger.info(f"Подтвержден существующий файл: {path} (размер: {os.path.getsize(path)} байт)")
+            existing_media_paths.append(path)
+            logger.info(f"Файл подтвержден: {path} (размер: {os.path.getsize(path)} байт)")
         else:
             logger.warning(f"Файл не существует: {path}")
-    
-    logger.info(f"Итого подтвержденных файлов: {len(existing_files)}/{len(all_media_files)}")
     
     telegram_success = False
     
     try:
-        # Отправляем в Telegram
-        if existing_files:
-            # Сортируем файлы по имени для гарантии порядка
-            existing_files.sort()
+        # Публикуем в Telegram
+        if existing_media_paths:
+            # Сортируем файлы для определенного порядка
+            existing_media_paths.sort()
             
-            if len(existing_files) > 1:
+            if len(existing_media_paths) > 1:
                 # Альбом
-                logger.info(f"Отправляю альбом из {len(existing_files)} файлов в Telegram: {existing_files}")
+                logger.info(f"Отправляю альбом из {len(existing_media_paths)} файлов в Telegram")
                 await clients.bot_client.send_file(
                     config.TARGET_ID,
-                    existing_files,
+                    existing_media_paths,
                     caption=telegram_text,
                     parse_mode='HTML'
                 )
             else:
                 # Одиночное медиа
-                logger.info(f"Отправляю одиночное медиа в Telegram: {existing_files[0]}")
+                logger.info(f"Отправляю одиночное медиа в Telegram: {existing_media_paths[0]}")
                 await clients.bot_client.send_file(
                     config.TARGET_ID,
-                    existing_files[0],
+                    existing_media_paths[0],
                     caption=telegram_text,
                     parse_mode='HTML'
                 )
@@ -321,21 +366,21 @@ async def publish_direct_news(message_id: int):
                 telegram_text,
                 parse_mode='HTML'
             )
-        
+            
         telegram_success = True
         logger.info(f"Успешно опубликовано в Telegram: новость {message_id}")
         
         # Публикуем в ВК
         if telegram_success and config.VK_TARGET_GROUP_ID:
-            logger.info(f"Публикую в ВК новость {message_id}, файлов: {len(existing_files)}")
+            logger.info(f"Публикую в ВК новость {message_id}, файлов: {len(existing_media_paths)}")
             
-            # Отправляем в ВК
-            vk_result = await publisher._publish_to_vk(vk_text, existing_files)
+            # Публикуем в ВК
+            vk_result = await publisher._publish_to_vk(vk_text, existing_media_paths)
             if vk_result:
                 logger.info(f"Успешно опубликовано в ВК: новость {message_id}")
             else:
                 logger.error(f"Не удалось опубликовать в ВК: новость {message_id}")
-    
+            
     except Exception as e:
         logger.error(f"Ошибка при публикации новости {message_id}: {e}", exc_info=True)
     finally:
