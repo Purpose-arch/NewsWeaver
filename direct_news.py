@@ -17,6 +17,9 @@ os.makedirs(TEMP_MEDIA_DIR, exist_ok=True)
 # direct_news[message_id] = {"message": …, "text": …, "decided": …, "media_paths": [], "moderation_msg_ids": [], "reply_to_id": …}
 direct_news: dict[int, dict] = {}
 
+# Словарь для отслеживания альбомов: grouped_id -> message_id первого сообщения альбома
+album_tracking: dict[int, int] = {}
+
 # Переменная для хранения ID бота, заполняется при инициализации
 BOT_ID = None
 
@@ -47,8 +50,40 @@ async def process_direct_message(message):
     
     # Получаем текст сообщения
     text = message.text or message.message or ""
-    if not text and not message.media:
-        # Игнорируем пустые сообщения без медиа
+    
+    # Проверяем, является ли сообщение частью альбома
+    grouped_id = getattr(message, 'grouped_id', None)
+    
+    # Проверяем, есть ли уже обрабатываемый альбом с таким grouped_id
+    if grouped_id and grouped_id in album_tracking:
+        # Это сообщение из уже обрабатываемого альбома, добавляем его медиа к существующей записи
+        first_message_id = album_tracking[grouped_id]
+        if first_message_id in direct_news and message.media:
+            logger.info(f"Добавляю медиа из сообщения {message.id} к альбому {grouped_id} (первое сообщение {first_message_id})")
+            
+            # Создаем директорию для этого сообщения, если еще не создана
+            message_dir = os.path.join(TEMP_MEDIA_DIR, f"direct_{first_message_id}")
+            os.makedirs(message_dir, exist_ok=True)
+            
+            # Скачиваем медиа
+            try:
+                idx = len(direct_news[first_message_id]["media_paths"])
+                filename = os.path.join(message_dir, f"media_{idx}")
+                path = await clients.bot_client.download_media(message, file=filename)
+                if path:
+                    logger.info(f"Медиа из альбома сохранено по пути: {path}")
+                    direct_news[first_message_id]["media_paths"].append(path)
+                
+                # Если в этом сообщении есть текст и он не пустой, добавим его к основному тексту
+                if text:
+                    if direct_news[first_message_id]["text"]:
+                        direct_news[first_message_id]["text"] += f"\n\n{text}"
+                    else:
+                        direct_news[first_message_id]["text"] = text
+            except Exception as e:
+                logger.error(f"Error downloading media from album message {message.id}: {e}", exc_info=True)
+        
+        # Не продолжаем обработку отдельных сообщений альбома
         return
     
     # Создаем уникальный идентификатор для сообщения
@@ -67,15 +102,27 @@ async def process_direct_message(message):
             message_dir = os.path.join(TEMP_MEDIA_DIR, f"direct_{message_id}")
             os.makedirs(message_dir, exist_ok=True)
             
-            if getattr(message, 'grouped_id', None):
-                # Это часть альбома, нужно найти все сообщения альбома
-                grouped_id = message.grouped_id
-                logger.info(f"Сообщение {message_id} является частью альбома с grouped_id={grouped_id}")
+            if grouped_id:
+                # Это первое обрабатываемое сообщение из альбома
+                logger.info(f"Сообщение {message_id} является первым в альбоме с grouped_id={grouped_id}")
+                
+                # Регистрируем альбом в системе отслеживания
+                album_tracking[grouped_id] = message_id
+                
                 # Получаем последние сообщения из чата (ограничиваем разумным количеством)
                 msgs = await clients.bot_client.get_messages(config.MODERATION_CHAT_ID, limit=30)
                 media_msgs_in_group = [m for m in msgs if getattr(m, 'grouped_id', None) == grouped_id and m.media]
                 media_msgs_in_group.sort(key=lambda m: m.id)
                 logger.info(f"Найдено {len(media_msgs_in_group)} сообщений в альбоме")
+                
+                # Объединяем текст всех сообщений альбома
+                for msg in media_msgs_in_group:
+                    msg_text = msg.text or msg.message or ""
+                    if msg_text and msg.id != message_id:  # избегаем дублирования текста текущего сообщения
+                        if text:
+                            text += f"\n\n{msg_text}"
+                        else:
+                            text = msg_text
                 
                 # Скачиваем каждое медиа отдельно
                 for idx, msg in enumerate(media_msgs_in_group):
@@ -97,6 +144,11 @@ async def process_direct_message(message):
                     media_paths.append(path)
         except Exception as e:
             logger.error(f"Error downloading media from direct message {message_id}: {e}", exc_info=True)
+    
+    # Пропускаем пустые сообщения без медиа
+    if not text and not media_paths:
+        logger.info(f"Игнорирую пустое сообщение без медиа: {message_id}")
+        return
     
     # Создаем кнопки для модерации
     buttons = [
@@ -136,6 +188,10 @@ async def process_direct_message(message):
         logger.error(f"Failed to process direct message {message_id}: {e}", exc_info=True)
         # Очищаем скачанные файлы в случае ошибки
         cleanup_media_files_direct(message_id)
+        
+        # Удаляем запись из отслеживания альбомов, если это был альбом
+        if grouped_id and grouped_id in album_tracking and album_tracking[grouped_id] == message_id:
+            del album_tracking[grouped_id]
 
 async def _auto_reject_direct(message_id, delay: int):
     """
@@ -147,6 +203,12 @@ async def _auto_reject_direct(message_id, delay: int):
         entry["decided"] = "reject"
         await reject_direct_news(message_id)
         logger.info(f"Auto-rejected direct message {message_id}")
+        
+        # Очищаем запись из отслеживания альбомов
+        for grouped_id, msg_id in list(album_tracking.items()):
+            if msg_id == message_id:
+                del album_tracking[grouped_id]
+                break
 
 async def process_direct_callback(event):
     """
@@ -179,6 +241,13 @@ async def process_direct_callback(event):
         logger.warning(f"Cannot delete direct moderation message: {e}")
         
     logger.info(f"Admin {event.sender_id} - {action} for direct message {message_id}")
+    
+    # Очищаем запись из отслеживания альбомов
+    for grouped_id, msg_id in list(album_tracking.items()):
+        if msg_id == message_id:
+            del album_tracking[grouped_id]
+            break
+            
     return True  # Обработали событие
 
 async def publish_direct_news(message_id: int):
