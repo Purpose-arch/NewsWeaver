@@ -23,16 +23,16 @@ async def init_vk_publish_client():
     """
     global vk_publish_client
     
-    if not config.VK_PUBLISH_TOKEN:
-        logger.warning("VK_PUBLISH_TOKEN не настроен в .env, публикация в ВК не будет активирована")
+    if not config.VK_TOKEN:
+        logger.warning("VK_TOKEN не настроен в .env, публикация в ВК не будет активирована")
         return False
     
-    logger.info(f"Начинаю инициализацию клиента VK API для публикации с токеном: {config.VK_PUBLISH_TOKEN[:5]}...")
+    logger.info(f"Начинаю инициализацию клиента VK API для публикации с пользовательским токеном: {config.VK_TOKEN[:5]}...")
     
     try:
         # Создаем асинхронную сессию с токеном
-        logger.info("Создаю TokenSession для VK API публикации")
-        session = TokenSession(access_token=config.VK_PUBLISH_TOKEN)
+        logger.info("Создаю TokenSession для VK API публикации с пользовательским токеном для парсинга")
+        session = TokenSession(access_token=config.VK_TOKEN)  # Используем токен для парсинга вместо отдельного токена
         vk_publish_client = API(session)  # Библиотека не поддерживает параметр v в конструкторе
         
         # Проверяем подключение
@@ -95,39 +95,12 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
         
         attachments = []
         
-        # Загружаем фотографии, если они есть, сначала в альбом, затем прикрепляем к посту
+        # Загружаем фотографии, если они есть
         if media_paths:
-            # Получаем список альбомов группы
-            albums = await vk_publish_client.photos.getAlbums(owner_id=group_id, v='5.131')
-            
-            # Ищем или создаем альбом для временных фото
-            album_id = None
-            temp_album_title = "Временные фото для постов"
-            
-            for album in albums.get('items', []):
-                if album.get('title') == temp_album_title:
-                    album_id = album.get('id')
-                    break
-            
-            # Если альбом не найден, создаем новый
-            if not album_id:
-                logger.info(f"Создаю новый альбом '{temp_album_title}' для группы {-group_id}")
-                album_response = await vk_publish_client.photos.createAlbum(
-                    title=temp_album_title,
-                    group_id=-group_id,
-                    description="Автоматически созданный альбом для загрузки фото",
-                    v='5.131'
-                )
-                album_id = album_response.get('id')
-            
             for media_path in media_paths:
                 try:
-                    # Получаем URL сервера для загрузки фото в альбом
-                    upload_url = await vk_publish_client.photos.getUploadServer(
-                        album_id=album_id,
-                        group_id=-group_id,
-                        v='5.131'
-                    )
+                    # Получаем URL сервера для загрузки фото
+                    upload_url = await vk_publish_client.photos.getWallUploadServer(group_id=-group_id, v='5.131')  # Передаем версию API в запрос
                     
                     # Читаем файл и отправляем на сервер ВК
                     with open(media_path, 'rb') as f:
@@ -140,24 +113,21 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
                                 upload_data = await response.json()
                     
                     # Сохраняем загруженное фото
-                    saved_photo = await vk_publish_client.photos.save(
-                        album_id=album_id,
+                    saved_photo = await vk_publish_client.photos.saveWallPhoto(
                         group_id=-group_id,
+                        photo=upload_data['photo'],
                         server=upload_data['server'],
-                        photos_list=upload_data['photos_list'],
                         hash=upload_data['hash'],
-                        v='5.131'
+                        v='5.131'  # Передаем версию API в запрос
                     )
                     
                     # Добавляем фото в прикрепления
-                    if saved_photo and len(saved_photo) > 0:
-                        photo_id = saved_photo[0]['id']
-                        owner_id = saved_photo[0]['owner_id']
-                        attachments.append(f"photo{owner_id}_{photo_id}")
-                        logger.info(f"Фото успешно загружено в альбом: photo{owner_id}_{photo_id}")
+                    photo_id = saved_photo[0]['id']
+                    owner_id = saved_photo[0]['owner_id']
+                    attachments.append(f"photo{owner_id}_{photo_id}")
                     
                 except Exception as e:
-                    logger.error(f"Ошибка при загрузке фото в альбом ВК: {e}")
+                    logger.error(f"Ошибка при загрузке фото в ВК: {e}")
         
         # Публикуем запись на стене
         params = {
@@ -169,7 +139,6 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
         
         if attachments:
             params['attachments'] = ','.join(attachments)
-            logger.info(f"Прикрепляю фото к посту: {attachments}")
         
         # Отправляем запрос на публикацию
         result = await vk_publish_client.wall.post(**params)
