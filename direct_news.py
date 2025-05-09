@@ -109,31 +109,15 @@ async def process_direct_message(message):
                 # Регистрируем альбом в системе отслеживания
                 album_tracking[grouped_id] = message_id
                 
-                # Получаем последние сообщения из чата (ограничиваем разумным количеством)
-                msgs = await clients.bot_client.get_messages(config.MODERATION_CHAT_ID, limit=30)
-                media_msgs_in_group = [m for m in msgs if getattr(m, 'grouped_id', None) == grouped_id and m.media]
-                media_msgs_in_group.sort(key=lambda m: m.id)
-                logger.info(f"Найдено {len(media_msgs_in_group)} сообщений в альбоме")
+                # Обрабатываем только текущее сообщение альбома, так как боты не могут использовать get_messages
+                # для получения истории сообщений
+                filename = os.path.join(message_dir, "media_0")
+                path = await clients.bot_client.download_media(message, file=filename)
+                if path:
+                    logger.info(f"Медиа из альбома сохранено по пути: {path}")
+                    media_paths.append(path)
                 
-                # Объединяем текст всех сообщений альбома
-                for msg in media_msgs_in_group:
-                    msg_text = msg.text or msg.message or ""
-                    if msg_text and msg.id != message_id:  # избегаем дублирования текста текущего сообщения
-                        if text:
-                            text += f"\n\n{msg_text}"
-                        else:
-                            text = msg_text
-                
-                # Скачиваем каждое медиа отдельно
-                for idx, msg in enumerate(media_msgs_in_group):
-                    filename = os.path.join(message_dir, f"media_{idx}")
-                    logger.info(f"Скачиваю медиа {idx+1}/{len(media_msgs_in_group)} из альбома")
-                    path = await clients.bot_client.download_media(msg, file=filename)
-                    if path:
-                        logger.info(f"Медиа сохранено по пути: {path}")
-                        media_paths.append(path)
-                
-                logger.info(f"Всего скачано {len(media_paths)} файлов из альбома")
+                logger.info(f"Загружено первое медиа из альбома. Остальные медиа будут обработаны отдельно.")
             else:
                 # Одиночное медиа
                 logger.info(f"Сообщение {message_id} содержит одиночное медиа")
