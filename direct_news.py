@@ -260,36 +260,40 @@ async def publish_direct_news(message_id: int):
     media_paths = entry.get("media_paths", [])
     
     logger.info(f"Публикую прямую новость {message_id}, медиафайлов: {len(media_paths)}")
-    if media_paths:
-        logger.info(f"Пути к медиафайлам: {media_paths}")
-        # Проверяем существование каждого файла
-        for path in media_paths:
-            if os.path.exists(path):
-                size = os.path.getsize(path)
-                logger.info(f"Файл существует: {path} (размер: {size} байт)")
-            else:
-                logger.error(f"Файл не существует: {path}")
+    
+    # Проверяем папку сообщения на наличие всех медиафайлов
+    message_dir = os.path.join(TEMP_MEDIA_DIR, f"direct_{message_id}")
+    
+    # Если директория существует, ищем все медиафайлы в ней
+    if os.path.exists(message_dir):
+        all_files = []
+        try:
+            # Получаем список всех файлов в директории
+            all_files = [os.path.join(message_dir, f) for f in os.listdir(message_dir) if os.path.isfile(os.path.join(message_dir, f))]
+            logger.info(f"Найдено {len(all_files)} файлов в директории сообщения {message_id}: {all_files}")
+            
+            # Если в директории больше файлов, чем у нас в списке, обновляем список
+            if len(all_files) > len(media_paths):
+                logger.info(f"Обновляем список медиафайлов с {len(media_paths)} до {len(all_files)}")
+                media_paths = all_files
+        except Exception as e:
+            logger.error(f"Ошибка при поиске файлов в директории {message_dir}: {e}")
+    
+    # Проверяем существование каждого файла
+    existing_media_paths = []
+    for path in media_paths:
+        if os.path.exists(path):
+            size = os.path.getsize(path)
+            logger.info(f"Файл существует: {path} (размер: {size} байт)")
+            existing_media_paths.append(path)
+        else:
+            logger.error(f"Файл не существует: {path}")
+    
+    logger.info(f"Итого медиафайлов для публикации: {len(existing_media_paths)}")
     
     try:
         # Если есть медиафайлы, отправляем их вместе с текстом
-        if media_paths:
-            # Фильтруем только существующие файлы
-            existing_media_paths = [path for path in media_paths if os.path.exists(path)]
-            logger.info(f"Существующих медиафайлов: {len(existing_media_paths)}/{len(media_paths)}")
-            
-            # Если в списке был только один файл из альбома, попробуем найти другие по шаблону имени
-            if len(existing_media_paths) == 1 and "_0" in existing_media_paths[0]:
-                base_dir = os.path.dirname(existing_media_paths[0])
-                base_name = os.path.basename(existing_media_paths[0]).replace("_0", "_")
-                logger.info(f"Поиск дополнительных файлов альбома в директории {base_dir}")
-                # Ищем другие файлы с похожими именами
-                for i in range(1, 10):  # Разумное ограничение на количество файлов в альбоме
-                    potential_file = os.path.join(base_dir, base_name.replace("_", f"_{i}"))
-                    if os.path.exists(potential_file):
-                        logger.info(f"Найден дополнительный файл альбома: {potential_file}")
-                        existing_media_paths.append(potential_file)
-                logger.info(f"После поиска найдено файлов альбома: {len(existing_media_paths)}")
-            
+        if existing_media_paths:
             if len(existing_media_paths) > 1:
                 # Альбом
                 logger.info(f"Отправляю альбом из {len(existing_media_paths)} файлов в Telegram")
@@ -300,7 +304,7 @@ async def publish_direct_news(message_id: int):
                     caption=telegram_text,
                     parse_mode='HTML'
                 )
-            elif len(existing_media_paths) == 1:
+            else:
                 # Одиночное медиа
                 logger.info(f"Отправляю одиночное медиа в Telegram: {existing_media_paths[0]}")
                 await clients.bot_client.send_file(
@@ -309,17 +313,9 @@ async def publish_direct_news(message_id: int):
                     caption=telegram_text,
                     parse_mode='HTML'
                 )
-            else:
-                # Нет существующих файлов, отправляем только текст
-                logger.warning("Все медиафайлы недоступны, отправляю только текст")
-                await clients.bot_client.send_message(
-                    config.TARGET_ID,
-                    telegram_text,
-                    parse_mode='HTML'
-                )
         else:
-            # Только текст
-            logger.info(f"Отправляю только текст в Telegram (нет медиафайлов)")
+            # Нет существующих файлов, отправляем только текст
+            logger.warning("Все медиафайлы недоступны, отправляю только текст")
             await clients.bot_client.send_message(
                 config.TARGET_ID,
                 telegram_text,
@@ -332,23 +328,8 @@ async def publish_direct_news(message_id: int):
         # Публикуем в ВК после успешной публикации в Telegram
         if telegram_success and config.VK_TARGET_GROUP_ID:
             logger.info(f"Публикую прямую новость в ВК {message_id}")
-            # Передаем только существующие файлы
-            existing_media_paths = [path for path in media_paths if os.path.exists(path)]
             
-            # Если в списке был только один файл из альбома, попробуем найти другие по шаблону имени
-            if len(existing_media_paths) == 1 and "_0" in existing_media_paths[0]:
-                base_dir = os.path.dirname(existing_media_paths[0])
-                base_name = os.path.basename(existing_media_paths[0]).replace("_0", "_")
-                logger.info(f"Поиск дополнительных файлов альбома для ВК в директории {base_dir}")
-                # Ищем другие файлы с похожими именами
-                for i in range(1, 10):  # Разумное ограничение на количество файлов в альбоме
-                    potential_file = os.path.join(base_dir, base_name.replace("_", f"_{i}"))
-                    if os.path.exists(potential_file):
-                        logger.info(f"Найден дополнительный файл альбома для ВК: {potential_file}")
-                        existing_media_paths.append(potential_file)
-                logger.info(f"После поиска найдено файлов альбома для ВК: {len(existing_media_paths)}")
-            
-            # Передаем текст без ссылки для ВК и все пути к медиа одним списком
+            # Используем тот же список файлов, который уже проверен
             logger.info(f"Файлы для публикации в ВК: {existing_media_paths}")
             vk_result = await publisher._publish_to_vk(vk_text, existing_media_paths)
             if vk_result:
