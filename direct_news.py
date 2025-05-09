@@ -8,6 +8,7 @@ import clients
 import tempfile
 from logger import logger
 from utils import markdown_to_html
+import publisher
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media_direct")
@@ -186,9 +187,11 @@ async def publish_direct_news(message_id: int):
     else:
         text = "📰 <a href=\"https://t.me/fatezhinteresting\">Фатежский Вестник</a>"
     
+    telegram_success = False
+    media_paths = entry.get("media_paths", [])
+    
     try:
         # Если есть медиафайлы, отправляем их вместе с текстом
-        media_paths = entry.get("media_paths", [])
         if media_paths:
             if len(media_paths) > 1:
                 # Альбом
@@ -214,7 +217,15 @@ async def publish_direct_news(message_id: int):
                 parse_mode='HTML'
             )
             
-        logger.info(f"Published direct news {message_id}")
+        telegram_success = True
+        logger.info(f"Published direct news {message_id} to Telegram")
+        
+        # Публикуем в ВК после успешной публикации в Telegram
+        if telegram_success and config.VK_TARGET_GROUP_ID:
+            logger.info(f"Публикую прямую новость в ВК {message_id}")
+            await publisher._publish_to_vk(text, media_paths)
+            logger.info(f"Published direct news {message_id} to VK")
+            
     except Exception as e:
         logger.error(f"Error publishing direct news {message_id}: {e}")
     finally:
