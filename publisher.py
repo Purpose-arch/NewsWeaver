@@ -172,8 +172,12 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
 
     # Переформулированные тексты уже в HTML, но проверим на наличие Markdown для совместимости
     text = markdown_to_html(entry["text"])
-    # append footer link
-    text = f"{text}\n\n📰 <a href=\"https://t.me/fatezhinteresting\">Фатежский Вестник</a>"
+    
+    # Подготавливаем текст для Telegram с HTML-форматированной ссылкой
+    telegram_text = f"{text}\n\n📰 <a href=\"https://t.me/fatezhinteresting\">Фатежский Вестник</a>"
+    
+    # Для ВК используем текст без ссылки на паблик
+    vk_text = text
     
     # Проверяем наличие сохраненных путей к медиафайлам
     media_paths = entry.get("media_paths", [])
@@ -188,7 +192,7 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                 await clients.bot_client.send_file(
                     config.TARGET_ID,
                     media_paths,
-                    caption=text,
+                    caption=telegram_text,
                     parse_mode='HTML'
                 )
             else:
@@ -196,7 +200,7 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                 await clients.bot_client.send_file(
                     config.TARGET_ID,
                     media_paths[0],
-                    caption=text,
+                    caption=telegram_text,
                     parse_mode='HTML'
                 )
             telegram_success = True
@@ -229,7 +233,7 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                         await clients.bot_client.send_file(
                             config.TARGET_ID,
                             paths,
-                            caption=text,
+                            caption=telegram_text,
                             parse_mode='HTML'
                         )
                         telegram_success = True
@@ -241,7 +245,7 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                         await clients.bot_client.send_file(
                             config.TARGET_ID,
                             path,
-                            caption=text,
+                            caption=telegram_text,
                             parse_mode='HTML'
                         )
                         telegram_success = True
@@ -280,7 +284,7 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                             await clients.bot_client.send_file(
                                 config.TARGET_ID,
                                 paths,
-                                caption=text,
+                                caption=telegram_text,
                                 parse_mode='HTML'
                             )
                         else:
@@ -288,7 +292,7 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                             await clients.bot_client.send_file(
                                 config.TARGET_ID,
                                 paths[0],
-                                caption=text,
+                                caption=telegram_text,
                                 parse_mode='HTML'
                             )
                         telegram_success = True
@@ -299,7 +303,7 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                         # Если не удалось скачать медиа, отправляем только текст
                         await clients.bot_client.send_message(
                             config.TARGET_ID,
-                            text,
+                            telegram_text,
                             parse_mode='HTML'
                         )
                         telegram_success = True
@@ -307,7 +311,7 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                 # Иначе просто отправляем текст
                 await clients.bot_client.send_message(
                     config.TARGET_ID,
-                    text,
+                    telegram_text,
                     parse_mode='HTML'
                 )
                 telegram_success = True
@@ -316,7 +320,8 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
         if telegram_success and config.VK_TARGET_GROUP_ID:
             logger.info(f"Публикую сообщение в ВК {key} (source: {source_type})")
             vk_data = entry["message"] if source_type == "vk" else None
-            await _publish_to_vk(text, media_paths, vk_data)
+            # Используем текст без ссылки для ВК
+            await _publish_to_vk(vk_text, media_paths, vk_data)
         
     except Exception as e:
         logger.error(f"Error publishing message {key} (source: {source_type}): {e}")

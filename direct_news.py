@@ -181,11 +181,15 @@ async def publish_direct_news(message_id: int):
     # Конвертируем markdown в HTML
     text = markdown_to_html(entry["text"])
     
-    # Добавляем подпись канала
-    if text:
-        text = f"{text}\n\n📰 <a href=\"https://t.me/fatezhinteresting\">Фатежский Вестник</a>"
+    # Добавляем подпись канала для Telegram (HTML формат)
+    telegram_text = text
+    if telegram_text:
+        telegram_text = f"{telegram_text}\n\n📰 <a href=\"https://t.me/fatezhinteresting\">Фатежский Вестник</a>"
     else:
-        text = "📰 <a href=\"https://t.me/fatezhinteresting\">Фатежский Вестник</a>"
+        telegram_text = "📰 <a href=\"https://t.me/fatezhinteresting\">Фатежский Вестник</a>"
+    
+    # Для ВК используем текст без ссылки на паблик
+    vk_text = text
     
     telegram_success = False
     media_paths = entry.get("media_paths", [])
@@ -198,7 +202,7 @@ async def publish_direct_news(message_id: int):
                 await clients.bot_client.send_file(
                     config.TARGET_ID,
                     media_paths,
-                    caption=text,
+                    caption=telegram_text,
                     parse_mode='HTML'
                 )
             else:
@@ -206,14 +210,14 @@ async def publish_direct_news(message_id: int):
                 await clients.bot_client.send_file(
                     config.TARGET_ID,
                     media_paths[0],
-                    caption=text,
+                    caption=telegram_text,
                     parse_mode='HTML'
                 )
         else:
             # Только текст
             await clients.bot_client.send_message(
                 config.TARGET_ID,
-                text,
+                telegram_text,
                 parse_mode='HTML'
             )
             
@@ -223,7 +227,8 @@ async def publish_direct_news(message_id: int):
         # Публикуем в ВК после успешной публикации в Telegram
         if telegram_success and config.VK_TARGET_GROUP_ID:
             logger.info(f"Публикую прямую новость в ВК {message_id}")
-            await publisher._publish_to_vk(text, media_paths)
+            # Передаем текст без ссылки для ВК
+            await publisher._publish_to_vk(vk_text, media_paths)
             logger.info(f"Published direct news {message_id} to VK")
             
     except Exception as e:
