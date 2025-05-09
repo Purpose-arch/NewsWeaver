@@ -10,8 +10,10 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 import config  # Импортируем конфигурацию проекта
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Настраиваем локальный логгер только если не был настроен ранее
 logger = logging.getLogger(__name__)
+if not logger.handlers and not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # Инициализируем клиент с StringSession
 alarm_client = TelegramClient(StringSession(config.STRING_SESSION), config.API_ID, config.API_HASH)
