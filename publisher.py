@@ -89,6 +89,8 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
         clean_text = clean_text.replace("<u>", "").replace("</u>", "")
         clean_text = clean_text.replace("<s>", "").replace("</s>", "")
         clean_text = clean_text.replace("<br>", "\n")
+        # Заменяем blockquote тег на кавычки, так как ВК не поддерживает тег blockquote
+        clean_text = clean_text.replace("<blockquote>", "«").replace("</blockquote>", "»")
         # Очищаем гиперссылки
         import re
         clean_text = re.sub(r'<a href="[^"]+">([^<]+)</a>', r'\1', clean_text)
