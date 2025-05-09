@@ -406,6 +406,15 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                         parse_mode='HTML'
                     )
                     telegram_success = True
+        else:
+            # Если вообще нет медиафайлов, отправляем только текст
+            logger.info(f"Отправляю только текст в Telegram (нет медиафайлов совсем)")
+            await clients.bot_client.send_message(
+                config.TARGET_ID,
+                telegram_text,
+                parse_mode='HTML'
+            )
+            telegram_success = True
         
         # Публикуем в ВК после успешной публикации в Telegram
         if telegram_success and config.VK_TARGET_GROUP_ID:

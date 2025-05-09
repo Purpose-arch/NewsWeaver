@@ -426,11 +426,15 @@ async def register_handlers():
             
             # Отдельно пробуем удалить сообщение, на котором нажали кнопку
             # это может быть дополнительной гарантией, если оно не в списке
-            if event.message and event.message.id:
-                try:
+            try:
+                # Проверяем, есть ли у event доступ к message (может отсутствовать)
+                if hasattr(event, 'message') and event.message and event.message.id:
                     await event.delete()
-                except Exception as e:
-                    logger.warning(f"Cannot delete callback message: {e}")
+                else:
+                    # Альтернативный способ удаления для callback_query
+                    await event.answer("", alert=False)
+            except Exception as e:
+                logger.warning(f"Error while deleting moderation messages: {e}")
         except Exception as e:
             logger.warning(f"Error while deleting moderation messages: {e}")
 
