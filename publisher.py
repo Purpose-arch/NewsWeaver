@@ -11,6 +11,58 @@ from utils import markdown_to_html
 import asyncio
 import aiohttp
 import io
+import requests
+from aiovk import TokenSession, API
+
+# Глобальный VK клиент для публикации
+vk_publish_client = None
+
+async def init_vk_publish_client():
+    """
+    Инициализирует отдельный клиент API ВКонтакте для публикации контента
+    """
+    global vk_publish_client
+    
+    if not config.VK_PUBLISH_TOKEN:
+        logger.warning("VK_PUBLISH_TOKEN не настроен в .env, публикация в ВК не будет активирована")
+        return False
+    
+    logger.info(f"Начинаю инициализацию клиента VK API для публикации с токеном: {config.VK_PUBLISH_TOKEN[:5]}...")
+    
+    try:
+        # Создаем асинхронную сессию с токеном
+        logger.info("Создаю TokenSession для VK API публикации")
+        session = TokenSession(access_token=config.VK_PUBLISH_TOKEN)
+        vk_publish_client = API(session)
+        
+        # Проверяем подключение
+        logger.info("Выполняю тестовый запрос к VK API для публикации")
+        if config.VK_TARGET_GROUP_ID:
+            group_info = await vk_publish_client.groups.getById(group_id=config.VK_TARGET_GROUP_ID)
+            logger.info(f"Группа для публикации {config.VK_TARGET_GROUP_ID} доступна: {group_info}")
+            return True
+        else:
+            logger.warning("VK_TARGET_GROUP_ID не настроен, публикация в ВК невозможна")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Ошибка инициализации VK API для публикации: {e}", exc_info=True)
+        return False
+
+async def close_vk_publish_client():
+    """
+    Закрывает соединение с API ВКонтакте для публикации
+    """
+    global vk_publish_client
+    
+    if vk_publish_client and hasattr(vk_publish_client, '_session') and hasattr(vk_publish_client._session, 'close'):
+        try:
+            await vk_publish_client._session.close()
+            logger.info("VK API клиент для публикации закрыт")
+        except Exception as e:
+            logger.error(f"Ошибка при закрытии VK API клиента для публикации: {e}")
+    else:
+        logger.warning("VK API клиент для публикации не был инициализирован или уже закрыт")
 
 async def _publish_to_vk(text, media_paths=None, vk_data=None):
     """
@@ -21,8 +73,8 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
         media_paths: Список путей к медиафайлам
         vk_data: Данные для публикации из ВК (если источник - ВК)
     """
-    if not vk_clients.vk_client or not config.VK_TARGET_GROUP_ID:
-        logger.warning("VK клиент не инициализирован или не указан VK_TARGET_GROUP_ID, публикация в ВК пропущена")
+    if not vk_publish_client or not config.VK_TARGET_GROUP_ID:
+        logger.warning("VK клиент для публикации не инициализирован или не указан VK_TARGET_GROUP_ID, публикация в ВК пропущена")
         return False
     
     try:
@@ -46,7 +98,7 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
             for media_path in media_paths:
                 try:
                     # Получаем URL сервера для загрузки фото
-                    upload_url = await vk_clients.vk_client.photos.getWallUploadServer(group_id=-group_id)
+                    upload_url = await vk_publish_client.photos.getWallUploadServer(group_id=-group_id)
                     
                     # Читаем файл и отправляем на сервер ВК
                     with open(media_path, 'rb') as f:
@@ -59,7 +111,7 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
                                 upload_data = await response.json()
                     
                     # Сохраняем загруженное фото
-                    saved_photo = await vk_clients.vk_client.photos.saveWallPhoto(
+                    saved_photo = await vk_publish_client.photos.saveWallPhoto(
                         group_id=-group_id,
                         photo=upload_data['photo'],
                         server=upload_data['server'],
@@ -85,7 +137,7 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
             params['attachments'] = ','.join(attachments)
         
         # Отправляем запрос на публикацию
-        result = await vk_clients.vk_client.wall.post(**params)
+        result = await vk_publish_client.wall.post(**params)
         
         if result and 'post_id' in result:
             logger.info(f"Сообщение успешно опубликовано в ВК, post_id: {result['post_id']}")
@@ -196,7 +248,6 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                 # Обработка медиа из ВК, если они не были предварительно скачаны
                 # Этот блок выполняется редко, так как обычно медиа уже скачаны в модерации
                 with tempfile.TemporaryDirectory() as tmp:
-                    import requests
                     
                     # Скачиваем фотографии
                     paths = []

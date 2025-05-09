@@ -1,5 +1,7 @@
 # main.py
 import asyncio
+import signal
+import sys
 from logger import logger
 import db
 import clients
@@ -11,53 +13,71 @@ import direct_news
 import vk_clients
 import vk_parser
 import alarm  # Импортируем модуль alarm
+from clients import start_clients, close_clients, loop
+
+async def on_shutdown():
+    """
+    Корректное завершение работы
+    """
+    logger.info("Завершение работы сервиса...")
+    await close_clients()
+    await db.close_db()
+    logger.info("Сервис остановлен")
 
 async def main():
-    logger.info("→ Initialize database")
-    await db.init_db()
-
-    logger.info("→ Start Telegram clients")
-    await clients.start_clients()
-
-    logger.info("→ Start VK client")
-    vk_active = await vk_clients.start_vk_client()
-
-    logger.info("→ Register moderation handlers")
-    await moderation.register_handlers()
-
-    logger.info("→ Start Telegram parser")
-    await parser.start_parser()
-    
-    if vk_active:
-        logger.info("→ Start VK parser")
+    """
+    Основная точка входа в приложение
+    """
+    try:
+        logger.info("Запуск сервиса...")
+        
+        # Инициализируем базу данных
+        await db.init_db()
+        
+        # Запускаем все клиенты
+        await start_clients()
+        
+        # Регистрируем обработчики модерации
+        await moderation.register_handlers()
+        
+        # Запускаем парсер сообщений из Telegram
+        await parser.start_parser()
+        
+        # Запускаем парсер из пабликов ВК
         await vk_parser.start_vk_parser()
-    else:
-        logger.warning("→ VK parser not started: VK client not initialized or token not provided")
-
-    logger.info("→ Start Alert Bot (rocket and UAV alerts)")
-    alarm_active = await alarm.start_alarm_bot()
-    if not alarm_active:
-        logger.warning("→ Alert Bot not started: missing config or connection error")
-
-    logger.info("→ Schedule cleanup_old task")
-    asyncio.create_task(db.schedule_cleanup(1))
-
-    logger.info("✅ Bot is up and running")
-    
-    # Дожидаемся отключения основных клиентов
-    await asyncio.gather(
-        clients.bot_client.disconnected,
-        clients.user_client.disconnected
-    )
-    
-    # Закрываем все активные клиенты
-    if vk_active:
-        logger.info("→ Closing VK client")
-        await vk_clients.close_vk_client()
-    
-    if alarm_active:
-        logger.info("→ Closing Alert Bot")
-        await alarm.stop_alarm_bot()
+        
+        # Запускаем парсер тревог
+        await alarm.start_alarm_bot()
+        
+        # Запускаем задачу очистки старых записей
+        asyncio.create_task(db.schedule_cleanup(1))
+        
+        logger.info("Сервис успешно запущен")
+        
+        # Бесконечный цикл, чтобы программа не завершалась
+        while True:
+            await asyncio.sleep(3600)  # Проверка каждый час
+            
+    except KeyboardInterrupt:
+        logger.info("Получен сигнал прерывания")
+    except Exception as e:
+        logger.critical(f"Критическая ошибка при запуске: {e}", exc_info=True)
+    finally:
+        await on_shutdown()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Обработка сигналов для корректного завершения
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(on_shutdown()))
+    
+    try:
+        # Запускаем основной цикл
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        logger.info("Программа прервана пользователем")
+    except Exception as e:
+        logger.critical(f"Необработанная ошибка: {e}", exc_info=True)
+    finally:
+        # Закрываем цикл событий
+        loop.close()
+        sys.exit(0)
