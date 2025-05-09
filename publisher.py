@@ -87,7 +87,7 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
         clean_text = text.replace("<b>", "").replace("</b>", "")
         clean_text = clean_text.replace("<i>", "").replace("</i>", "")
         clean_text = clean_text.replace("<u>", "").replace("</u>", "")
-        clean_text = clean_text.replace("", "").replace("</", "")
+        clean_text = clean_text.replace("<s>", "").replace("</s>", "")
         clean_text = clean_text.replace("<br>", "\n")
         # Очищаем гиперссылки
         import re
@@ -95,12 +95,24 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
         
         attachments = []
         
-        # Загружаем медиафайлы, если они есть
+        # Логирование информации о медиафайлах
         if media_paths:
-            logger.info(f"Начинаю загрузку {len(media_paths)} медиафайлов в ВК")
+            logger.info(f"Начинаю загрузку {len(media_paths)} медиафайлов в ВК. Пути: {media_paths}")
+            
+            # Проверяем существование файлов
+            for path in media_paths:
+                if not os.path.exists(path):
+                    logger.error(f"Файл не существует: {path}")
+                else:
+                    logger.info(f"Файл существует: {path} (размер: {os.path.getsize(path)} байт)")
             
             for media_path in media_paths:
                 try:
+                    # Проверяем наличие файла
+                    if not os.path.exists(media_path):
+                        logger.error(f"Файл не существует, пропускаю: {media_path}")
+                        continue
+                        
                     # Определяем тип файла
                     file_ext = os.path.splitext(media_path)[1].lower()
                     
@@ -136,6 +148,7 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
                         photo_id = saved_photo[0]['id']
                         owner_id = saved_photo[0]['owner_id']
                         attachments.append(f"photo{owner_id}_{photo_id}")
+                        logger.info(f"Фото добавлено в список вложений: photo{owner_id}_{photo_id}")
                     
                     # Загрузка видео
                     elif file_ext in ['.mp4', '.avi', '.mov', '.wmv', '.3gp', '.mkv']:
@@ -170,6 +183,7 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
                         video_id = video_upload['video_id']
                         owner_id = video_upload['owner_id']
                         attachments.append(f"video{owner_id}_{video_id}")
+                        logger.info(f"Видео добавлено в список вложений: video{owner_id}_{video_id}")
                     else:
                         logger.warning(f"Неподдерживаемый тип файла: {file_ext} для {media_path}")
                         
@@ -231,150 +245,183 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
     
     # Проверяем наличие сохраненных путей к медиафайлам
     media_paths = entry.get("media_paths", [])
+    
+    logger.info(f"Публикую новость {key} (source: {source_type}), медиафайлов: {len(media_paths)}")
+    if media_paths:
+        logger.info(f"Пути к медиафайлам: {media_paths}")
+        # Проверяем существование каждого файла
+        for path in media_paths:
+            if os.path.exists(path):
+                size = os.path.getsize(path)
+                logger.info(f"Файл существует: {path} (размер: {size} байт)")
+            else:
+                logger.error(f"Файл не существует: {path}")
+    
     telegram_success = False
     
     try:
         if media_paths:
-            # Используем уже скачанные файлы
-            logger.info(f"Using pre-downloaded media files for {key} (source: {source_type})")
-            if len(media_paths) > 1:
-                # Альбом - отправляем несколько файлов
-                await clients.bot_client.send_file(
-                    config.TARGET_ID,
-                    media_paths,
-                    caption=telegram_text,
-                    parse_mode='HTML'
-                )
-            else:
-                # Одиночное медиа
-                await clients.bot_client.send_file(
-                    config.TARGET_ID,
-                    media_paths[0],
-                    caption=telegram_text,
-                    parse_mode='HTML'
-                )
-            telegram_success = True
-        else:
-            # Если по какой-то причине медиа не были скачаны заранее
-            original = entry["message"]
-            client = entry.get("client")
+            # Фильтруем только существующие файлы
+            existing_media_paths = [path for path in media_paths if os.path.exists(path)]
+            logger.info(f"Существующих медиафайлов: {len(existing_media_paths)}/{len(media_paths)}")
             
-            if source_type == "telegram" and getattr(original, "media", None):
-                # Обработка медиа из Telegram
-                grouped_id = getattr(original, 'grouped_id', None)
-                entity = getattr(original, 'chat_id', None) or getattr(original.peer_id, 'channel_id', None)
-                with tempfile.TemporaryDirectory() as tmp:
-                    if grouped_id:
-                        # fetch all messages from the same album
-                        msgs = await client.get_messages(entity, limit=100)
-                        media_msgs = [m for m in msgs if getattr(m, 'grouped_id', None) == grouped_id]
-                        media_msgs.sort(key=lambda m: m.id)
-                        # Скачиваем каждое медиа отдельно
-                        paths = []
-                        for msg in media_msgs:
-                            if getattr(msg, 'media', None):
-                                path = await client.download_media(msg, file=tmp)
-                                if path:
-                                    paths.append(path)
+            # Используем уже скачанные файлы, если они существуют
+            if existing_media_paths:
+                logger.info(f"Using pre-downloaded media files for {key} (source: {source_type})")
+                if len(existing_media_paths) > 1:
+                    # Альбом - отправляем несколько файлов
+                    logger.info(f"Отправляю альбом из {len(existing_media_paths)} файлов в Telegram")
+                    await clients.bot_client.send_file(
+                        config.TARGET_ID,
+                        existing_media_paths,
+                        caption=telegram_text,
+                        parse_mode='HTML'
+                    )
+                else:
+                    # Одиночное медиа
+                    logger.info(f"Отправляю одиночное медиа в Telegram: {existing_media_paths[0]}")
+                    await clients.bot_client.send_file(
+                        config.TARGET_ID,
+                        existing_media_paths[0],
+                        caption=telegram_text,
+                        parse_mode='HTML'
+                    )
+                telegram_success = True
+                # Обновляем список media_paths для использования в ВК
+                media_paths = existing_media_paths
+            else:
+                logger.warning(f"Все предварительно скачанные медиафайлы недоступны, пытаюсь скачать заново")
+                # Далее идет код для повторной загрузки, который уже существует
+        
+            # Если все предварительно скачанные файлы недоступны или их не было, продолжаем с оригинальным кодом
+            if not telegram_success:
+                # Если по какой-то причине медиа не были скачаны заранее
+                original = entry["message"]
+                client = entry.get("client")
+                
+                if source_type == "telegram" and getattr(original, "media", None):
+                    # Обработка медиа из Telegram
+                    grouped_id = getattr(original, 'grouped_id', None)
+                    entity = getattr(original, 'chat_id', None) or getattr(original.peer_id, 'channel_id', None)
+                    with tempfile.TemporaryDirectory() as tmp:
+                        if grouped_id:
+                            # fetch all messages from the same album
+                            msgs = await client.get_messages(entity, limit=100)
+                            media_msgs = [m for m in msgs if getattr(m, 'grouped_id', None) == grouped_id]
+                            media_msgs.sort(key=lambda m: m.id)
+                            # Скачиваем каждое медиа отдельно
+                            paths = []
+                            for msg in media_msgs:
+                                if getattr(msg, 'media', None):
+                                    path = await client.download_media(msg, file=tmp)
+                                    if path:
+                                        paths.append(path)
                         
-                        if not paths:
-                            raise ValueError("Не удалось скачать медиафайлы из альбома")
+                            if not paths:
+                                raise ValueError("Не удалось скачать медиафайлы из альбома")
                             
-                        await clients.bot_client.send_file(
-                            config.TARGET_ID,
-                            paths,
-                            caption=telegram_text,
-                            parse_mode='HTML'
-                        )
-                        telegram_success = True
-                        
-                        # Сохраняем пути для публикации в ВК
-                        media_paths = paths.copy()
-                    else:
-                        path = await client.download_media(original, file=tmp)
-                        await clients.bot_client.send_file(
-                            config.TARGET_ID,
-                            path,
-                            caption=telegram_text,
-                            parse_mode='HTML'
-                        )
-                        telegram_success = True
-                        
-                        # Сохраняем путь для публикации в ВК
-                        media_paths = [path]
-            elif source_type == "vk" and "attachments" in original:
-                # Обработка медиа из ВК, если они не были предварительно скачаны
-                # Этот блок выполняется редко, так как обычно медиа уже скачаны в модерации
-                with tempfile.TemporaryDirectory() as tmp:
-                    
-                    # Скачиваем фотографии
-                    paths = []
-                    for idx, attachment in enumerate(original.get("attachments", [])):
-                        if attachment.get("type") == "photo":
-                            # Получаем ссылку на фото
-                            photo_sizes = attachment["photo"]["sizes"]
-                            photo_sizes.sort(key=lambda x: x.get("width", 0) * x.get("height", 0), reverse=True)
-                            photo_url = photo_sizes[0]["url"]
-                            
-                            # Скачиваем фото
-                            try:
-                                filename = os.path.join(tmp, f"photo_{idx}.jpg")
-                                response = requests.get(photo_url, stream=True)
-                                if response.status_code == 200:
-                                    with open(filename, 'wb') as file:
-                                        for chunk in response.iter_content(chunk_size=8192):
-                                            file.write(chunk)
-                                    paths.append(filename)
-                            except Exception as e:
-                                logger.error(f"Failed to download VK photo: {e}")
-                    
-                    if paths:
-                        if len(paths) > 1:
-                            # Отправляем альбом
                             await clients.bot_client.send_file(
                                 config.TARGET_ID,
                                 paths,
                                 caption=telegram_text,
                                 parse_mode='HTML'
                             )
+                            telegram_success = True
+                            
+                            # Сохраняем пути для публикации в ВК
+                            media_paths = paths.copy()
                         else:
-                            # Отправляем одиночное фото
+                            path = await client.download_media(original, file=tmp)
                             await clients.bot_client.send_file(
                                 config.TARGET_ID,
-                                paths[0],
+                                path,
                                 caption=telegram_text,
                                 parse_mode='HTML'
                             )
-                        telegram_success = True
+                            telegram_success = True
+                            
+                            # Сохраняем путь для публикации в ВК
+                            media_paths = [path]
+                elif source_type == "vk" and "attachments" in original:
+                    # Обработка медиа из ВК, если они не были предварительно скачаны
+                    # Этот блок выполняется редко, так как обычно медиа уже скачаны в модерации
+                    with tempfile.TemporaryDirectory() as tmp:
                         
-                        # Сохраняем пути для публикации в ВК
-                        media_paths = paths.copy()
-                    else:
-                        # Если не удалось скачать медиа, отправляем только текст
-                        await clients.bot_client.send_message(
-                            config.TARGET_ID,
-                            telegram_text,
-                            parse_mode='HTML'
-                        )
-                        telegram_success = True
-            else:
-                # Иначе просто отправляем текст
-                await clients.bot_client.send_message(
-                    config.TARGET_ID,
-                    telegram_text,
-                    parse_mode='HTML'
-                )
-                telegram_success = True
+                        # Скачиваем фотографии
+                        paths = []
+                        for idx, attachment in enumerate(original.get("attachments", [])):
+                            if attachment.get("type") == "photo":
+                                # Получаем ссылку на фото
+                                photo_sizes = attachment["photo"]["sizes"]
+                                photo_sizes.sort(key=lambda x: x.get("width", 0) * x.get("height", 0), reverse=True)
+                                photo_url = photo_sizes[0]["url"]
+                                
+                                # Скачиваем фото
+                                try:
+                                    filename = os.path.join(tmp, f"photo_{idx}.jpg")
+                                    response = requests.get(photo_url, stream=True)
+                                    if response.status_code == 200:
+                                        with open(filename, 'wb') as file:
+                                            for chunk in response.iter_content(chunk_size=8192):
+                                                file.write(chunk)
+                                        paths.append(filename)
+                                except Exception as e:
+                                    logger.error(f"Failed to download VK photo: {e}")
+                        
+                        if paths:
+                            if len(paths) > 1:
+                                # Отправляем альбом
+                                await clients.bot_client.send_file(
+                                    config.TARGET_ID,
+                                    paths,
+                                    caption=telegram_text,
+                                    parse_mode='HTML'
+                                )
+                            else:
+                                # Отправляем одиночное фото
+                                await clients.bot_client.send_file(
+                                    config.TARGET_ID,
+                                    paths[0],
+                                    caption=telegram_text,
+                                    parse_mode='HTML'
+                                )
+                            telegram_success = True
+                            
+                            # Сохраняем пути для публикации в ВК
+                            media_paths = paths.copy()
+                        else:
+                            # Если не удалось скачать медиа, отправляем только текст
+                            await clients.bot_client.send_message(
+                                config.TARGET_ID,
+                                telegram_text,
+                                parse_mode='HTML'
+                            )
+                            telegram_success = True
+                else:
+                    # Иначе просто отправляем текст
+                    logger.info(f"Отправляю только текст в Telegram (нет медиафайлов)")
+                    await clients.bot_client.send_message(
+                        config.TARGET_ID,
+                        telegram_text,
+                        parse_mode='HTML'
+                    )
+                    telegram_success = True
         
         # Публикуем в ВК после успешной публикации в Telegram
         if telegram_success and config.VK_TARGET_GROUP_ID:
             logger.info(f"Публикую сообщение в ВК {key} (source: {source_type})")
             vk_data = entry["message"] if source_type == "vk" else None
+            # Фильтруем только существующие файлы для ВК
+            existing_media_paths = [path for path in media_paths if os.path.exists(path)]
             # Используем текст без ссылки для ВК
-            await _publish_to_vk(vk_text, media_paths, vk_data)
+            vk_result = await _publish_to_vk(vk_text, existing_media_paths, vk_data)
+            if vk_result:
+                logger.info(f"Успешно опубликовано в ВК: {key} (source: {source_type})")
+            else:
+                logger.error(f"Не удалось опубликовать в ВК: {key} (source: {source_type})")
         
     except Exception as e:
-        logger.error(f"Error publishing message {key} (source: {source_type}): {e}")
+        logger.error(f"Error publishing message {key} (source: {source_type}): {e}", exc_info=True)
     finally:
         # Очищаем временные файлы
         try:

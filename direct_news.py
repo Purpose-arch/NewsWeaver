@@ -61,6 +61,7 @@ async def process_direct_message(message):
     # Создаем временную директорию для хранения медиа, если есть
     media_paths = []
     if message.media:
+        logger.info(f"Прямое сообщение {message_id} содержит медиа")
         try:
             # Создаем директорию для этого сообщения
             message_dir = os.path.join(TEMP_MEDIA_DIR, f"direct_{message_id}")
@@ -69,25 +70,33 @@ async def process_direct_message(message):
             if getattr(message, 'grouped_id', None):
                 # Это часть альбома, нужно найти все сообщения альбома
                 grouped_id = message.grouped_id
+                logger.info(f"Сообщение {message_id} является частью альбома с grouped_id={grouped_id}")
                 # Получаем последние сообщения из чата (ограничиваем разумным количеством)
                 msgs = await clients.bot_client.get_messages(config.MODERATION_CHAT_ID, limit=30)
                 media_msgs_in_group = [m for m in msgs if getattr(m, 'grouped_id', None) == grouped_id and m.media]
                 media_msgs_in_group.sort(key=lambda m: m.id)
+                logger.info(f"Найдено {len(media_msgs_in_group)} сообщений в альбоме")
                 
                 # Скачиваем каждое медиа отдельно
                 for idx, msg in enumerate(media_msgs_in_group):
                     filename = os.path.join(message_dir, f"media_{idx}")
+                    logger.info(f"Скачиваю медиа {idx+1}/{len(media_msgs_in_group)} из альбома")
                     path = await clients.bot_client.download_media(msg, file=filename)
                     if path:
+                        logger.info(f"Медиа сохранено по пути: {path}")
                         media_paths.append(path)
+                
+                logger.info(f"Всего скачано {len(media_paths)} файлов из альбома")
             else:
                 # Одиночное медиа
+                logger.info(f"Сообщение {message_id} содержит одиночное медиа")
                 filename = os.path.join(message_dir, "media")
                 path = await clients.bot_client.download_media(message, file=filename)
                 if path:
+                    logger.info(f"Медиа сохранено по пути: {path}")
                     media_paths.append(path)
         except Exception as e:
-            logger.error(f"Error downloading media from direct message {message_id}: {e}")
+            logger.error(f"Error downloading media from direct message {message_id}: {e}", exc_info=True)
     
     # Создаем кнопки для модерации
     buttons = [
@@ -116,12 +125,15 @@ async def process_direct_message(message):
             "reply_to_id": message_id
         }
         
-        logger.info(f"Added direct message {message_id} for moderation")
+        if media_paths:
+            logger.info(f"Added direct message {message_id} for moderation with {len(media_paths)} media files: {media_paths}")
+        else:
+            logger.info(f"Added direct message {message_id} for moderation (text only)")
         
         # Планируем автоматическое отклонение через 24 часа
         asyncio.create_task(_auto_reject_direct(message_id, 24 * 3600))
     except Exception as e:
-        logger.error(f"Failed to process direct message {message_id}: {e}")
+        logger.error(f"Failed to process direct message {message_id}: {e}", exc_info=True)
         # Очищаем скачанные файлы в случае ошибки
         cleanup_media_files_direct(message_id)
 
@@ -194,27 +206,53 @@ async def publish_direct_news(message_id: int):
     telegram_success = False
     media_paths = entry.get("media_paths", [])
     
+    logger.info(f"Публикую прямую новость {message_id}, медиафайлов: {len(media_paths)}")
+    if media_paths:
+        logger.info(f"Пути к медиафайлам: {media_paths}")
+        # Проверяем существование каждого файла
+        for path in media_paths:
+            if os.path.exists(path):
+                size = os.path.getsize(path)
+                logger.info(f"Файл существует: {path} (размер: {size} байт)")
+            else:
+                logger.error(f"Файл не существует: {path}")
+    
     try:
         # Если есть медиафайлы, отправляем их вместе с текстом
         if media_paths:
-            if len(media_paths) > 1:
+            # Фильтруем только существующие файлы
+            existing_media_paths = [path for path in media_paths if os.path.exists(path)]
+            logger.info(f"Существующих медиафайлов: {len(existing_media_paths)}/{len(media_paths)}")
+            
+            if len(existing_media_paths) > 1:
                 # Альбом
+                logger.info(f"Отправляю альбом из {len(existing_media_paths)} файлов в Telegram")
                 await clients.bot_client.send_file(
                     config.TARGET_ID,
-                    media_paths,
+                    existing_media_paths,
+                    caption=telegram_text,
+                    parse_mode='HTML'
+                )
+            elif len(existing_media_paths) == 1:
+                # Одиночное медиа
+                logger.info(f"Отправляю одиночное медиа в Telegram: {existing_media_paths[0]}")
+                await clients.bot_client.send_file(
+                    config.TARGET_ID,
+                    existing_media_paths[0],
                     caption=telegram_text,
                     parse_mode='HTML'
                 )
             else:
-                # Одиночное медиа
-                await clients.bot_client.send_file(
+                # Нет существующих файлов, отправляем только текст
+                logger.warning("Все медиафайлы недоступны, отправляю только текст")
+                await clients.bot_client.send_message(
                     config.TARGET_ID,
-                    media_paths[0],
-                    caption=telegram_text,
+                    telegram_text,
                     parse_mode='HTML'
                 )
         else:
             # Только текст
+            logger.info(f"Отправляю только текст в Telegram (нет медиафайлов)")
             await clients.bot_client.send_message(
                 config.TARGET_ID,
                 telegram_text,
@@ -227,12 +265,17 @@ async def publish_direct_news(message_id: int):
         # Публикуем в ВК после успешной публикации в Telegram
         if telegram_success and config.VK_TARGET_GROUP_ID:
             logger.info(f"Публикую прямую новость в ВК {message_id}")
+            # Передаем только существующие файлы
+            existing_media_paths = [path for path in media_paths if os.path.exists(path)]
             # Передаем текст без ссылки для ВК и все пути к медиа одним списком
-            await publisher._publish_to_vk(vk_text, media_paths)
-            logger.info(f"Published direct news {message_id} to VK")
+            vk_result = await publisher._publish_to_vk(vk_text, existing_media_paths)
+            if vk_result:
+                logger.info(f"Успешно опубликовано в ВК: прямая новость {message_id}")
+            else:
+                logger.error(f"Не удалось опубликовать в ВК: прямая новость {message_id}")
             
     except Exception as e:
-        logger.error(f"Error publishing direct news {message_id}: {e}")
+        logger.error(f"Error publishing direct news {message_id}: {e}", exc_info=True)
     finally:
         # Очищаем временные файлы
         cleanup_media_files_direct(message_id)
