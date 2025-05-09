@@ -95,12 +95,39 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
         
         attachments = []
         
-        # Загружаем фотографии, если они есть
+        # Загружаем фотографии, если они есть, сначала в альбом, затем прикрепляем к посту
         if media_paths:
+            # Получаем список альбомов группы
+            albums = await vk_publish_client.photos.getAlbums(owner_id=group_id, v='5.131')
+            
+            # Ищем или создаем альбом для временных фото
+            album_id = None
+            temp_album_title = "Временные фото для постов"
+            
+            for album in albums.get('items', []):
+                if album.get('title') == temp_album_title:
+                    album_id = album.get('id')
+                    break
+            
+            # Если альбом не найден, создаем новый
+            if not album_id:
+                logger.info(f"Создаю новый альбом '{temp_album_title}' для группы {-group_id}")
+                album_response = await vk_publish_client.photos.createAlbum(
+                    title=temp_album_title,
+                    group_id=-group_id,
+                    description="Автоматически созданный альбом для загрузки фото",
+                    v='5.131'
+                )
+                album_id = album_response.get('id')
+            
             for media_path in media_paths:
                 try:
-                    # Получаем URL сервера для загрузки фото
-                    upload_url = await vk_publish_client.photos.getWallUploadServer(group_id=-group_id, v='5.131')  # Передаем версию API в запрос
+                    # Получаем URL сервера для загрузки фото в альбом
+                    upload_url = await vk_publish_client.photos.getUploadServer(
+                        album_id=album_id,
+                        group_id=-group_id,
+                        v='5.131'
+                    )
                     
                     # Читаем файл и отправляем на сервер ВК
                     with open(media_path, 'rb') as f:
@@ -113,21 +140,24 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
                                 upload_data = await response.json()
                     
                     # Сохраняем загруженное фото
-                    saved_photo = await vk_publish_client.photos.saveWallPhoto(
+                    saved_photo = await vk_publish_client.photos.save(
+                        album_id=album_id,
                         group_id=-group_id,
-                        photo=upload_data['photo'],
                         server=upload_data['server'],
+                        photos_list=upload_data['photos_list'],
                         hash=upload_data['hash'],
-                        v='5.131'  # Передаем версию API в запрос
+                        v='5.131'
                     )
                     
                     # Добавляем фото в прикрепления
-                    photo_id = saved_photo[0]['id']
-                    owner_id = saved_photo[0]['owner_id']
-                    attachments.append(f"photo{owner_id}_{photo_id}")
+                    if saved_photo and len(saved_photo) > 0:
+                        photo_id = saved_photo[0]['id']
+                        owner_id = saved_photo[0]['owner_id']
+                        attachments.append(f"photo{owner_id}_{photo_id}")
+                        logger.info(f"Фото успешно загружено в альбом: photo{owner_id}_{photo_id}")
                     
                 except Exception as e:
-                    logger.error(f"Ошибка при загрузке фото в ВК: {e}")
+                    logger.error(f"Ошибка при загрузке фото в альбом ВК: {e}")
         
         # Публикуем запись на стене
         params = {
@@ -139,6 +169,7 @@ async def _publish_to_vk(text, media_paths=None, vk_data=None):
         
         if attachments:
             params['attachments'] = ','.join(attachments)
+            logger.info(f"Прикрепляю фото к посту: {attachments}")
         
         # Отправляем запрос на публикацию
         result = await vk_publish_client.wall.post(**params)
