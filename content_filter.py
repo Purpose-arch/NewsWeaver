@@ -35,8 +35,13 @@ async def check_content(text: str) -> bool:
     """
     errors = []
     
-    # Перебираем все модели из списка
-    for model_name in config.AI_MODELS:
+    # Используем список моделей в обратном порядке для фильтрации
+    # (более легкие модели в приоритете для простых задач)
+    reversed_models = list(reversed(config.AI_MODELS))
+    logger.info(f"Content filter using models in reverse order: {reversed_models}")
+    
+    # Перебираем модели в обратном порядке
+    for model_name in reversed_models:
         # Для каждой модели пробуем все ключи API
         for key in config.GOOGLE_AI_API_KEYS:
             try:
