@@ -4,7 +4,7 @@ import google.generativeai as genai
 import config
 from logger import logger
 
-# Те же шаблоны промптов, что и в requesty.py
+
 default_prompt = (
     "Ты – профессиональный помощник по редактуре и оформлению новостей для Telegram-канала.\n"
     "Твоя задача – преобразовать входной новостной текст в ТОЛЬКО валидный HTML-код для Telegram, строго соблюдая указанные правила.\n"
