@@ -253,9 +253,6 @@ async def publish_direct_news(message_id: int):
     else:
         telegram_text = "📰 <a href=\"https://t.me/fatezhinteresting\">Фатежский Вестник</a>"
     
-    # Для ВК используем текст без ссылки на паблик
-    vk_text = text
-    
     telegram_success = False
     media_paths = entry.get("media_paths", [])
     
@@ -315,18 +312,6 @@ async def publish_direct_news(message_id: int):
         telegram_success = True
         logger.info(f"Published direct news {message_id} to Telegram")
         
-        # Публикуем в ВК после успешной публикации в Telegram
-        if telegram_success and config.VK_TARGET_GROUP_ID:
-            logger.info(f"Публикую прямую новость в ВК {message_id}")
-            # Передаем только существующие файлы
-            existing_media_paths = [path for path in media_paths if os.path.exists(path)]
-            # Передаем текст без ссылки для ВК и все пути к медиа одним списком
-            vk_result = await publisher._publish_to_vk(vk_text, existing_media_paths)
-            if vk_result:
-                logger.info(f"Успешно опубликовано в ВК: прямая новость {message_id}")
-            else:
-                logger.error(f"Не удалось опубликовать в ВК: прямая новость {message_id}")
-            
     except Exception as e:
         logger.error(f"Error publishing direct news {message_id}: {e}", exc_info=True)
     finally:

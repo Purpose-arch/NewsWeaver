@@ -10,8 +10,6 @@ import moderation
 import requesty
 import publisher
 import direct_news
-import vk_clients
-import vk_parser
 import alarm  # Импортируем модуль alarm
 from clients import start_clients, close_clients, loop
 
@@ -42,9 +40,6 @@ async def main():
         
         # Запускаем парсер сообщений из Telegram
         await parser.start_parser()
-        
-        # Запускаем парсер из пабликов ВК
-        await vk_parser.start_vk_parser()
         
         # Запускаем парсер тревог
         await alarm.start_alarm_bot()

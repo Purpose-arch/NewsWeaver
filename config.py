@@ -25,22 +25,6 @@ SOURCE_IDS     = parse_list("SOURCE_IDS", int)
 # Админы для модерации
 ADMIN_IDS      = parse_list("ADMIN_IDS", int)
 
-# VK API settings
-VK_TOKEN      = os.getenv("VK_TOKEN", "")
-# Отдельный токен для публикации в ВК
-VK_PUBLISH_TOKEN = os.getenv("VK_PUBLISH_TOKEN", "")
-VK_GROUP_IDS  = parse_list("VK_GROUP_IDS", int)
-# ID паблика ВК для публикации принятых новостей
-VK_TARGET_GROUP_ID = int(os.getenv("VK_TARGET_GROUP_ID", "0"))
-
-# Добавляем тестовую группу, если не указано ни одной группы
-if not VK_GROUP_IDS and VK_TOKEN:
-    # ID 230392075 используется в качестве тестовой группы, если не указаны другие
-    TEST_VK_GROUP_ID = 230392075
-    VK_GROUP_IDS.append(TEST_VK_GROUP_ID)
-
-VK_POLL_INTERVAL = int(os.getenv("VK_POLL_INTERVAL", "300"))  # Интервал опроса пабликов ВК в секундах
-
 # Bot API и куда публиковать
 BOT_TOKEN      = os.getenv("BOT_TOKEN")
 TARGET_ID      = int(os.getenv("TARGET_ID", "0"))
