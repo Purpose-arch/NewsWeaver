@@ -34,17 +34,6 @@ TARGET_ID      = int(os.getenv("TARGET_ID", "0"))
 SOURCE_CHANNEL_ID = os.getenv("SOURCE_CHANNEL_ID", "")
 # Публикация осуществляется в тот же канал, что и основной бот (TARGET_ID)
 
-# PostgreSQL (fallback defaults to avoid None)
-DB_HOST        = os.getenv("DB_HOST", "localhost")
-DB_PORT        = os.getenv("DB_PORT", "5432")
-DB_NAME        = os.getenv("DB_NAME", "postgres")
-DB_USER        = os.getenv("DB_USER", "postgres")
-DB_PASSWORD    = os.getenv("DB_PASSWORD", "")
-# Use full DATABASE_URL if provided (e.g. Railway plugin), otherwise build DSN
-DATABASE_URL   = os.getenv("DATABASE_URL") or (
-    f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
-
 # ID группового чата для модерации новостей
 # Этот чат используется для отправки новостей на модерацию
 # Бот должен быть администратором в этом чате

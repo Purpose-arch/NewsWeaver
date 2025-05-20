@@ -1,7 +1,6 @@
 import asyncio
 from telethon import events
 import config
-import db
 import requesty
 import google_ai
 import moderation
@@ -11,17 +10,11 @@ import content_filter
 
 async def _process_message(client, message):
     """
-    Handle incoming message: deduplicate, reformulate text, and send to moderation.
+    Handle incoming message: reformulate text, and send to moderation.
     """
     # Determine channel and message IDs
     channel_id = getattr(message, 'chat_id', None) or getattr(message.peer_id, 'channel_id', None)
     message_id = message.id
-
-    # Skip already processed messages
-    if await db.check_processed(channel_id, message_id):
-        return
-    # Mark as processed to avoid duplications
-    await db.mark_processed(channel_id, message_id)
 
     text = message.message or message.raw_text or ''
     if not text.strip():

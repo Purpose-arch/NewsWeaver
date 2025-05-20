@@ -40,9 +40,6 @@ SOURCE_IDS=-100123456789,-100987654321
 ```
 # ID модераторов (через запятую)
 ADMIN_IDS=123456789
-
-# База данных PostgreSQL
-DATABASE_URL=postgresql://postgres:password@localhost:5432/newsbot
 ```
 
 ## Запуск

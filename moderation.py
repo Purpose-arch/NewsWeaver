@@ -15,7 +15,6 @@ import requests
 from typing import Optional, Union, List
 from logger import logger
 import direct_news
-import db
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media")

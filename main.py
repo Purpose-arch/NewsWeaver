@@ -3,7 +3,6 @@ import asyncio
 import signal
 import sys
 from logger import logger
-import db
 import clients
 import parser
 import moderation
@@ -19,7 +18,6 @@ async def on_shutdown():
     """
     logger.info("Завершение работы сервиса...")
     await close_clients()
-    await db.close_db()
     logger.info("Сервис остановлен")
 
 async def main():
@@ -28,9 +26,6 @@ async def main():
     """
     try:
         logger.info("Запуск сервиса...")
-        
-        # Инициализируем базу данных
-        await db.init_db()
         
         # Запускаем все клиенты
         await start_clients()
