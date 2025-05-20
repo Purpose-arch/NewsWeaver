@@ -26,15 +26,15 @@ pending = {}
 
 async def send_for_moderation(channel_id: int, message_id: int, text: str, client, original_message, source_type: str = "telegram"):
     """
-    Отправляет сообщение на модерацию в MODERATION_CHAT_ID, добавляя кнопки принять/отклонить
+    Places a news message into the in-memory moderation queue and sends it to MODERATION_CHAT_ID with accept/reject buttons.
 
     Args:
-        channel_id: ID канала/чата источника
-        message_id: ID исходного сообщения
-        text: Переформулированный или проверенный текст новости
-        client: Клиент Telethon, с которым было получено сообщение
-        original_message: Оригинальное сообщение из источника
-        source_type: Тип источника ("telegram" или "vk")
+        channel_id: Source channel or chat ID.
+        message_id: Original message ID from the source.
+        text: Reformulated or checked news text.
+        client: Telethon client instance that received the message.
+        original_message: The original message object from the source.
+        source_type: Source type ("telegram" or "vk").
     """
     key = (channel_id, message_id)
 
