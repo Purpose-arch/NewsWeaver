@@ -44,8 +44,7 @@ async def main():
         # Запускаем парсер тревог
         await alarm.start_alarm_bot()
         
-        # Запускаем задачу очистки старых записей
-        asyncio.create_task(db.schedule_cleanup(1))
+        # DEPRECATED: asyncio.create_task(db.schedule_cleanup(1))  # Удалено автоудаление новостей
         
         logger.info("Сервис успешно запущен")
         

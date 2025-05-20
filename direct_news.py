@@ -165,9 +165,6 @@ async def process_direct_message(message):
             logger.info(f"Added direct message {message_id} for moderation with {len(media_paths)} media files: {media_paths}")
         else:
             logger.info(f"Added direct message {message_id} for moderation (text only)")
-        
-        # Планируем автоматическое отклонение через 24 часа
-        asyncio.create_task(_auto_reject_direct(message_id, 24 * 3600))
     except Exception as e:
         logger.error(f"Failed to process direct message {message_id}: {e}", exc_info=True)
         # Очищаем скачанные файлы в случае ошибки
@@ -176,23 +173,6 @@ async def process_direct_message(message):
         # Удаляем запись из отслеживания альбомов, если это был альбом
         if grouped_id and grouped_id in album_tracking and album_tracking[grouped_id] == message_id:
             del album_tracking[grouped_id]
-
-async def _auto_reject_direct(message_id, delay: int):
-    """
-    Автоматически отклоняет прямую новость через указанное время.
-    """
-    await asyncio.sleep(delay)
-    entry = direct_news.get(message_id)
-    if entry and not entry["decided"]:
-        entry["decided"] = "reject"
-        await reject_direct_news(message_id)
-        logger.info(f"Auto-rejected direct message {message_id}")
-        
-        # Очищаем запись из отслеживания альбомов
-        for grouped_id, msg_id in list(album_tracking.items()):
-            if msg_id == message_id:
-                del album_tracking[grouped_id]
-                break
 
 async def process_direct_callback(event):
     """

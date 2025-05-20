@@ -165,17 +165,6 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
         logger.error(f"Failed to send message to moderation chat: {e}")
 
     logger.info(f"Sent to moderation chat {key} (source: {source_type})")
-    # Планируем автоматическое отклонение через 24 часа
-    asyncio.create_task(_auto_reject(key, 24 * 3600))
-
-async def _auto_reject(key, delay: int):
-    await asyncio.sleep(delay)
-    entry = pending.get(key)
-    if entry and not entry["decided"]:
-        entry["decided"] = "reject"
-        source_type = entry.get("source_type", "telegram")
-        await publisher.reject(*key, source_type)
-        logger.info(f"Auto-rejected {key} (source: {source_type})")
 
 async def regenerate_with_custom_prompt(entry, custom_prompt, replied_msg_id):
     """

@@ -92,24 +92,3 @@ async def mark_processed(channel_id: int, message_id: int, source_type: str = "t
             "INSERT INTO processed_messages(channel_id, message_id, source_type) VALUES($1, $2, $3) ON CONFLICT DO NOTHING",
             channel_id, message_id, source_type
         )
-
-async def cleanup_old():
-    """
-    Delete processed message records older than 24 hours.
-    """
-    async with pool.acquire() as conn:
-        result = await conn.execute(
-            "DELETE FROM processed_messages WHERE created_at < NOW() - INTERVAL '24 hours'"
-        )
-    logger.info(f"cleanup_old result: {result}")
-
-async def schedule_cleanup(interval_hours: int = 1):
-    """
-    Periodically run cleanup_old every interval_hours.
-    """
-    while True:
-        try:
-            await cleanup_old()
-        except Exception as e:
-            logger.error(f"Error during cleanup_old: {e}")
-        await asyncio.sleep(interval_hours * 3600) 
