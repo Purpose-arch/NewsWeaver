@@ -20,6 +20,12 @@ REQUESTY_APIS  = parse_list("REQUESTY_APIS", str)
 GOOGLE_AI_API_KEYS = parse_list("GOOGLE_AI_API_KEYS", str)
 # Список моделей в порядке приоритета (если одна не работает, используем следующую)
 AI_MODELS = parse_list("AI_MODELS", str) or ["gemini-2.5-pro-exp-03-25", "gemini-1.5-pro", "gemini-1.5-flash"]
+
+# VoidAI API
+VOIDAI_API_KEYS = parse_list("VOIDAI_API_KEYS", str)
+# Список моделей VoidAI в порядке приоритета
+VOIDAI_MODELS = parse_list("VOIDAI_MODELS", str) or ["claude-3-5-sonnet-20241022", "gpt-4o", "gemini-1.5-pro"]
+
 # Источники для парсинга
 SOURCE_IDS     = parse_list("SOURCE_IDS", int)
 # Админы для модерации

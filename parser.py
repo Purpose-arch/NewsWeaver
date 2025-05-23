@@ -2,7 +2,8 @@ import asyncio
 from telethon import events
 import config
 import requesty
-import google_ai
+# DEPRECATED: import google_ai
+import voidapi_ai
 import moderation
 import clients
 from logger import logger
@@ -31,9 +32,9 @@ async def _process_message(client, message):
         logger.error(f"Content filter check failed for {channel_id}:{message_id}: {e}")
         # Если проверка не удалась, продолжаем обработку (не фильтруем)
 
-    # Reformulate text via Google AI API
+    # Reformulate text via VoidAI API
     try:
-        reformulated = await google_ai.reformulate_text(text)
+        reformulated = await voidapi_ai.reformulate_text(text)
     except Exception as e:
         logger.error(f"Reformulation failed for {channel_id}:{message_id}: {e}")
         return
