@@ -1,6 +1,6 @@
 import asyncio
 from telethon.tl.types import Document
-from telethon.tl.functions.messages import GetFileRequest
+from telethon.tl.functions.upload import GetFileRequest
 from telethon.tl.types import InputFile, InputFileBig
 from telethon.tl import types
 from telethon import utils
