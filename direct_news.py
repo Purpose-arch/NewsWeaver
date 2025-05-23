@@ -9,7 +9,6 @@ import tempfile
 from logger import logger
 from utils import markdown_to_html
 import publisher
-import fast_file_transfer
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media_direct")
@@ -70,7 +69,7 @@ async def process_direct_message(message):
             try:
                 idx = len(direct_news[first_message_id]["media_paths"])
                 filename = os.path.join(message_dir, f"media_{idx}")
-                path = await fast_file_transfer.download_file(clients.bot_client, message.document, filename)
+                path = await clients.bot_client.download_media(message, file=filename)
                 if path:
                     logger.info(f"Медиа из альбома сохранено по пути: {path}")
                     direct_news[first_message_id]["media_paths"].append(path)
@@ -113,7 +112,7 @@ async def process_direct_message(message):
                 # Обрабатываем только текущее сообщение альбома, так как боты не могут использовать get_messages
                 # для получения истории сообщений
                 filename = os.path.join(message_dir, "media_0")
-                path = await fast_file_transfer.download_file(clients.bot_client, message.document, filename)
+                path = await clients.bot_client.download_media(message, file=filename)
                 if path:
                     logger.info(f"Медиа из альбома сохранено по пути: {path}")
                     media_paths.append(path)
@@ -123,7 +122,7 @@ async def process_direct_message(message):
                 # Одиночное медиа
                 logger.info(f"Сообщение {message_id} содержит одиночное медиа")
                 filename = os.path.join(message_dir, "media")
-                path = await fast_file_transfer.download_file(clients.bot_client, message.document, filename)
+                path = await clients.bot_client.download_media(message, file=filename)
                 if path:
                     logger.info(f"Медиа сохранено по пути: {path}")
                     media_paths.append(path)

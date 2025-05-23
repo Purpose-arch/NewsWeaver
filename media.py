@@ -3,7 +3,6 @@ import tempfile
 from telethon import TelegramClient
 from logger import logger
 import clients
-import fast_file_transfer
 
 async def send_media(client: TelegramClient, target: int, message) -> list[str]:
     """

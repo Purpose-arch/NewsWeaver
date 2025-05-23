@@ -11,7 +11,6 @@ import asyncio
 import aiohttp
 import io
 import requests
-import fast_file_transfer
 
 async def publish(channel_id: int, message_id: int, source_type: str = "telegram"):
     """
@@ -105,7 +104,7 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                             paths = []
                             for msg in media_msgs:
                                 if getattr(msg, 'media', None):
-                                    path = fast_file_transfer.download_file(client, msg.document, tmp)
+                                    path = await client.download_media(msg, file=tmp)
                                     if path:
                                         paths.append(path)
                         
@@ -123,7 +122,7 @@ async def publish(channel_id: int, message_id: int, source_type: str = "telegram
                             # Сохраняем пути 
                             media_paths = paths.copy()
                         else:
-                            path = fast_file_transfer.download_file(client, original, tmp)
+                            path = await client.download_media(original, file=tmp)
                             await clients.bot_client.send_file(
                                 config.TARGET_ID,
                                 path,

@@ -16,7 +16,6 @@ import requests
 from typing import Optional, Union, List
 from logger import logger
 import direct_news
-import fast_file_transfer
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media")
@@ -89,12 +88,12 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
                 # Скачиваем каждое медиа отдельно
                 for msg in media_msgs:
                     if hasattr(msg, 'media'):
-                        path = fast_file_transfer.download_file(client, msg.document, message_dir)
+                        path = await client.download_media(msg, file=message_dir)
                         if path:
                             media_paths.append(path)
             else:
                 # Если это одиночное медиа
-                path = fast_file_transfer.download_file(client, original_message.document, message_dir)
+                path = await client.download_media(original_message, file=message_dir)
                 if path:
                     media_paths.append(path)
                 else:
