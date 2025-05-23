@@ -1,6 +1,6 @@
 import asyncio
 from telethon.tl.types import Document
-from telethon.tl.functions.messages import GetFile
+from telethon.tl.functions.messages import GetFileRequest
 from telethon.tl.types import InputFile, InputFileBig
 from telethon.tl import types
 from telethon import utils
@@ -34,7 +34,7 @@ async def download_file(client, document, out, *, progress_callback=None, worker
         async with sem:
             offset = i * chunk_size
             limit = min(chunk_size, size - offset)
-            res = await client(GetFile(
+            res = await client(GetFileRequest(
                 location=location,
                 offset=offset,
                 limit=limit,
