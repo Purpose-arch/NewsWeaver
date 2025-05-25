@@ -44,7 +44,3 @@ SOURCE_CHANNEL_ID = os.getenv("SOURCE_CHANNEL_ID", "")
 # Этот чат используется для отправки новостей на модерацию
 # Бот должен быть администратором в этом чате
 MODERATION_CHAT_ID = int(os.getenv("MODERATION_CHAT_ID", "0"))
-
-# VK Configuration
-VK_TOKEN = os.environ.get("VK_TOKEN") # Ваш VK User Token с доступом к группам и offline
-VK_SOURCE_IDS = list(map(int, os.environ.get("VK_SOURCE_IDS", "").split(','))) # Список ID групп VK для парсинга (положительные числа)
