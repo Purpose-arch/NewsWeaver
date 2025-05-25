@@ -1,6 +1,6 @@
 import asyncio
 from aiovk import API, TokenSession
-from aiovk.longpoll import UserLongPoll
+# DEPRECATED: from aiovk.longpoll import UserLongPoll # No longer using User Long Poll
 import config
 from logger import logger
 import moderation
@@ -13,6 +13,10 @@ import shutil # Import shutil for cleanup
 # Создаем временную директорию для хранения медиафайлов на время модерации VK
 TEMP_VK_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_vk_media")
 os.makedirs(TEMP_VK_MEDIA_DIR, exist_ok=True)
+
+# Словарь для отслеживания последнего ID поста для каждого источника VK
+# Формат: {source_id: last_post_id}
+last_post_ids = {}
 
 
 async def download_media(session, media_type, owner_id, media_id, access_key=None):
@@ -116,53 +120,24 @@ async def download_media(session, media_type, owner_id, media_id, access_key=Non
 async def _extract_vk_message_data(session, vk_object):
     """
     Extracts standardized message data (channel_id, message_id, text, media_paths) from a VK object.
-    Can handle VK Long Poll events (type 4) and wall post objects.
+    Handles wall post objects.
     """
     channel_id = None
     message_id = None
     text = ""
-    attachments_dict = {}
     media_paths = []
     source_type = "vk"
     original_object = None # Keep track of the original object if needed later
 
-    if isinstance(vk_object, list) and len(vk_object) >= 7 and vk_object[0] == 4: # Long Poll event
-        message_id = vk_object[1]
-        channel_id = vk_object[3] # peer_id
-        text = vk_object[5]
-        attachments_dict = vk_object[6]
-        original_object = vk_object
-        logger.debug(f"Extracted data from LP event: {channel_id}:{message_id}")
-
-    elif isinstance(vk_object, dict) and 'id' in vk_object and 'owner_id' in vk_object: # Likely a wall post item
+    # Check if it's a wall post item
+    if isinstance(vk_object, dict) and 'id' in vk_object and 'owner_id' in vk_object:
         message_id = vk_object.get('id')
         channel_id = vk_object.get('owner_id') # group/page ID (negative)
         text = vk_object.get('text', '')
-        # Wall post attachments are in a list, each item having 'type' and details
-        attachments_list = vk_object.get('attachments', [])
-        # Convert list of attachments to a dict similar to LP for unified processing
-        # Note: This is a simplification; not all LP attachment keys map directly.
-        # We will process the list directly below.
-        # attachments_dict = {f'attach{i+1}_type': att.get('type') for i, att in enumerate(attachments_list)}
-        # for i, att in enumerate(attachments_list):
-        #     if att.get('type') in ['photo', 'video']:
-        #          # Format for photos/videos in wall post attachments is different
-        #          # Need owner_id and media_id from the specific attachment object
-        #          # photo/video objects usually have id and owner_id fields
-        #          att_details = f"{att[att['type']].get('owner_id')}_{att[att['type']].get('id')}"
-        #          if att[att['type']].get('access_key'):
-        #              att_details += f"_{att[att['type']].get('access_key')}"
-        #          attachments_dict[f'attach{i+1}'] = att_details
         original_object = vk_object
         logger.debug(f"Extracted data from wall post: {channel_id}:{message_id}")
 
-
-    if channel_id is None or message_id is None:
-        logger.warning(f"Could not extract essential data from VK object: {vk_object}")
-        return None, None, "", [], "vk", None
-
-    # Process attachments if it's a wall post object (list of dicts)
-    if isinstance(vk_object, dict) and 'attachments' in vk_object:
+        # Wall post attachments are in a list, each item having 'type' and details
         attachments_list = vk_object.get('attachments', [])
         for att in attachments_list:
             att_type = att.get('type')
@@ -192,42 +167,22 @@ async def _extract_vk_message_data(session, vk_object):
             else:
                 logger.debug(f"Ignoring unsupported VK attachment type in wall post: {att_type}")
 
-    # Process attachments if it's a Long Poll event (dict in 6th element)
-    elif isinstance(vk_object, list) and len(vk_object) >= 7 and vk_object[0] == 4:
-         attachments_dict = vk_object[6]
-         i = 1
-         while f'attach{i}_type' in attachments_dict:
-             attach_type = attachments_dict[f'attach{i}_type']
-             attach_details = attachments_dict.get(f'attach{i}') # Format: owner_id_media_id or owner_id_media_id_access_key
-             # access_key might be separate key or part of attach_details string
-             access_key = attachments_dict.get(f'attach{i}_access_key')
+    # DEPRECATED: Long Poll event handling removed
+    # elif isinstance(vk_object, list) and len(vk_object) >= 7 and vk_object[0] == 4: # Long Poll event
+    #     message_id = vk_object[1]
+    #     channel_id = vk_object[3] # peer_id
+    #     text = vk_object[5]
+    #     attachments_dict = vk_object[6]
+    #     original_object = vk_object
+    #     logger.debug(f"Extracted data from LP event: {channel_id}:{message_id}")
+    #     # Long Poll attachment processing logic removed
 
-             if attach_details:
-                 try:
-                     parts = attach_details.split('_')
-                     owner_id = int(parts[0])
-                     media_id = int(parts[1])
-                     if len(parts) > 2 and not access_key:
-                          access_key = parts[2]
 
-                     if attach_type in ['photo', 'video']:
-                         # Check if the media belongs to the source channel/group
-                         if owner_id == channel_id: # Compare with the extracted channel_id
-                             logger.info(f"Found VK media attachment in LP event: type={attach_type}, owner={owner_id}, id={media_id}")
-                             downloaded_path = await download_media(session, attach_type, owner_id, media_id, access_key)
-                             if downloaded_path:
-                                 media_paths.append(downloaded_path)
-                             else:
-                                 logger.warning(f"Failed to download VK media {attach_type} {owner_id}_{media_id}")
-                         else:
-                              logger.debug(f"Ignoring VK media attachment in LP event from different owner ({owner_id}) than peer ({channel_id})")
-                     else:
-                         logger.debug(f"Ignoring unsupported VK attachment type in LP event: {attach_type}")
+    if channel_id is None or message_id is None:
+        # This might happen if the vk_object is neither a wall post nor a recognized LP event (which is now deprecated)
+        logger.warning(f"Could not extract essential data from VK object (not a wall post): {vk_object}")
+        return None, None, "", [], "vk", None
 
-                 except Exception as parse_e:
-                     logger.error(f"Error parsing VK attachment details '{attach_details}': {parse_e}")
-
-             i += 1
 
     return channel_id, message_id, text, media_paths, source_type, original_object
 
@@ -237,19 +192,14 @@ async def _process_vk_message(session, channel_id, message_id, text, media_paths
     Handle processed VK message data and send to moderation.
     """
     try:
-        logger.info(f"Processing VK message from {channel_id} (ID: {message_id}): {text[:100]}... with {len(media_paths)} media files")
+        logger.info(f"Processing VK post from {channel_id} (ID: {message_id}): {text[:100]}... with {len(media_paths)} media files")
 
         # Apply content filter
         try:
             is_filtered = await content_filter.check_content(text)
             if is_filtered:
-                logger.info(f"Content filtered (ad or alert) for VK message {channel_id}:{message_id}")
+                logger.info(f"Content filtered (ad or alert) for VK post {channel_id}:{message_id}")
                 # Clean up media files immediately if filtered
-                # Note: cleanup_media_files in moderation module is designed to work with the 'pending' dict.
-                # Since we filter before adding to pending, we need to manually clean up here.
-                # Alternatively, ensure check_content adds to a temporary pending-like structure
-                # for cleanup. For now, manual cleanup of downloaded files.
-                # Iterate through media_paths and remove files and their parent dirs
                 cleaned_dirs = set()
                 for file_path in media_paths:
                     if os.path.exists(file_path):
@@ -263,7 +213,7 @@ async def _process_vk_message(session, channel_id, message_id, text, media_paths
                             logger.warning(f"Failed to cleanup VK media file {file_path} after filtering: {e}")
                 return # Stop processing if filtered
         except Exception as e:
-            logger.error(f"Content filter check failed for VK message {channel_id}:{message_id}: {e}")
+            logger.error(f"Content filter check failed for VK post {channel_id}:{message_id}: {e}")
             # If filter check fails, proceed with processing (do not filter)
 
         # Call moderation.send_for_moderation
@@ -279,12 +229,69 @@ async def _process_vk_message(session, channel_id, message_id, text, media_paths
         )
 
     except Exception as e:
-        logger.error(f"Error processing VK event {channel_id}:{message_id}: {e}")
+        logger.error(f"Error processing VK post {channel_id}:{message_id}: {e}")
+
+
+async def check_for_new_posts(session, api, source_id):
+    """
+    Checks a single VK source for new posts since the last check.
+    """
+    vk_owner_id = -source_id # Convert positive group ID to negative owner_id
+    try:
+        # Fetch latest posts, including extended info for attachments
+        response = await api.wall.get(owner_id=vk_owner_id, count=10, extended=1)
+
+        if response and 'items' in response:
+            posts = response['items']
+            # Filter out non-original posts (like replies, if any, though wall.get usually returns wall posts)
+            posts = [post for post in posts if post.get('type') == 'post'] # Explicitly check type
+
+            if not posts:
+                logger.debug(f"No original posts found for source {source_id}")
+                return
+
+            # Find the highest post ID among the retrieved posts
+            latest_retrieved_post_id = max(post.get('id', 0) for post in posts)
+
+            # Get the last processed post ID for this source
+            last_processed_post_id = last_post_ids.get(source_id, 0)
+
+            # Filter for new posts (IDs greater than the last processed ID)
+            new_posts = [post for post in posts if post.get('id', 0) > last_processed_post_id]
+
+            # Sort new posts by ID to process them chronologically
+            new_posts.sort(key=lambda post: post.get('id', 0))
+
+            if new_posts:
+                logger.info(f"Found {len(new_posts)} new posts for source {source_id}. Processing...")
+                for post in new_posts:
+                     channel_id, message_id, text, media_paths, source_type, original_object = await _extract_vk_message_data(session, post)
+                     if channel_id and message_id:
+                          await _process_vk_message(session, channel_id, message_id, text, media_paths)
+
+                # Update the last processed post ID for this source to the highest ID found
+                # This ensures we don't miss posts if multiple arrive between checks
+                last_post_ids[source_id] = latest_retrieved_post_id
+                logger.info(f"Updated last processed post ID for source {source_id} to {latest_retrieved_post_id}.")
+            else:
+                logger.debug(f"No new posts found for source {source_id}. Last processed ID: {last_processed_post_id}")
+
+        # Initial population of last_post_ids if this is the first check and no posts were found
+        # This prevents reprocessing old posts on subsequent checks if the initial wall was empty
+        elif source_id not in last_post_ids:
+             if response and 'items' in response and not response['items']:
+                 logger.info(f"No posts found for source {source_id} on initial check. Setting last_post_id to 0.")
+                 last_post_ids[source_id] = 0
+             elif not response:
+                  logger.warning(f"Empty or invalid response from wall.get for source {source_id}")
+
+    except Exception as e:
+        logger.error(f"Error checking for new posts for VK source {source_id}: {e}")
 
 
 async def start_vk_parser():
     """
-    Initialize VK parser using User Long Poll and fetch initial history.
+    Initialize VK parser using periodic wall.get checks.
     """
     if not config.VK_TOKEN or not config.VK_SOURCE_IDS:
         logger.warning("VK_TOKEN or VK_SOURCE_IDS not configured. VK parser will not start.")
@@ -297,57 +304,9 @@ async def start_vk_parser():
         logger.info("Fetching initial VK history...")
         for source_id in config.VK_SOURCE_IDS:
             try:
-                # wall.get requires owner_id (negative for groups)
-                # We stored positive IDs in config, so convert to negative
-                vk_owner_id = -source_id # Assuming source_id is positive group ID
-                # Fetch a limited number of recent posts (e.g., last 5)
-                response = await api.wall.get(owner_id=vk_owner_id, count=5)
-                if response and 'items' in response:
-                    # Process items in reverse order to simulate chronological appearance
-                    for post in reversed(response['items']):
-                        # Ensure the post is not an ad or pinned post if not desired
-                        # For simplicity, process all retrieved posts for now.
-                        channel_id, message_id, text, media_paths, source_type, original_object = await _extract_vk_message_data(session, post)
-                        if channel_id and message_id:
-                             # Call process message function
-                             await _process_vk_message(session, channel_id, message_id, text, media_paths)
-
+                await check_for_new_posts(session, api, source_id)
             except Exception as e:
                 logger.error(f"Error fetching initial history for VK source {source_id}: {e}")
-
-        # Start VK Long Poll listener
-        # Use UserLongPoll for parsing user channels
-        # mode=2 includes extended info like attachments
-        # version=18 is recommended for recent Long Poll features
-        lp = UserLongPoll(api, mode=2, version=18)
-
-        logger.info("Starting VK Long Poll listener...")
-        try:
-            async for event in lp.iter():
-                # VK Long Poll events are structured differently from Telethon
-                # Need to identify new message events from configured sources
-                # Example event structure (with mode=2): [4, message_id, flags, peer_id, timestamp, text, attachments]
-
-                # Check if the event is a new message (type 4)
-                # Ensure event has enough elements (at least 7 for type 4 with mode=2)
-                if isinstance(event, list) and len(event) >= 7 and event[0] == 4:
-                    peer_id = event[3]
-                    # Check if the message is from one of the specified VK sources
-                    # VK channel/public page IDs are negative. Check if the absolute value
-                    # is in our configured source list (which are positive group IDs).
-                    # Ensure peer_id is not None and is integer before taking abs()
-                    if isinstance(peer_id, int) and abs(peer_id) in config.VK_SOURCE_IDS:
-                         # Extract and process the message data
-                         channel_id, message_id, text, media_paths, source_type, original_object = await _extract_vk_message_data(session, event)
-                         if channel_id and message_id:
-                              await _process_vk_message(session, channel_id, message_id, text, media_paths)
-                    # else:
-                    #     logger.debug(f"Ignorning VK event from unknown peer {peer_id}")
-                # else:
-                #     logger.debug(f"Ignoring non-message VK event: {event}")
-
-        except Exception as e:
-            logger.error(f"Error in VK Long Poll: {e}")
 
 
 # Example usage (for testing, will be integrated into main app)
