@@ -18,6 +18,8 @@ os.makedirs(TEMP_VK_MEDIA_DIR, exist_ok=True)
 # Формат: {source_id: last_post_id}
 last_post_ids = {}
 
+# Период опроса источников VK в секундах
+VK_POLLING_INTERVAL = 60 # Check every 60 seconds
 
 async def download_media(session, media_type, owner_id, media_id, access_key=None):
     """
@@ -235,28 +237,32 @@ async def _process_vk_message(session, channel_id, message_id, text, media_paths
 async def check_for_new_posts(session, api, source_id):
     """
     Checks a single VK source for new posts since the last check.
+    Only processes posts with ID greater than the stored last_post_ids[source_id].
     """
     vk_owner_id = -source_id # Convert positive group ID to negative owner_id
     try:
         # Fetch latest posts, including extended info for attachments
+        # Use count=1 to get only the very latest post to update the max ID correctly
+        # and then filter based on last_post_ids
         response = await api.wall.get(owner_id=vk_owner_id, count=10, extended=1)
 
         if response and 'items' in response:
             posts = response['items']
-            # Filter out non-original posts (like replies, if any, though wall.get usually returns wall posts)
-            posts = [post for post in posts if post.get('type') == 'post'] # Explicitly check type
+            # Filter out non-original posts
+            posts = [post for post in posts if post.get('type') == 'post']
 
             if not posts:
                 logger.debug(f"No original posts found for source {source_id}")
                 return
 
             # Find the highest post ID among the retrieved posts
+            # Use max across the potentially 10 retrieved posts to ensure we capture the true latest
             latest_retrieved_post_id = max(post.get('id', 0) for post in posts)
 
             # Get the last processed post ID for this source
             last_processed_post_id = last_post_ids.get(source_id, 0)
 
-            # Filter for new posts (IDs greater than the last processed ID)
+            # Filter for new posts (IDs strictly greater than the last processed ID)
             new_posts = [post for post in posts if post.get('id', 0) > last_processed_post_id]
 
             # Sort new posts by ID to process them chronologically
@@ -265,33 +271,46 @@ async def check_for_new_posts(session, api, source_id):
             if new_posts:
                 logger.info(f"Found {len(new_posts)} new posts for source {source_id}. Processing...")
                 for post in new_posts:
+                     # Only process posts that are actually new based on ID comparison
                      channel_id, message_id, text, media_paths, source_type, original_object = await _extract_vk_message_data(session, post)
                      if channel_id and message_id:
                           await _process_vk_message(session, channel_id, message_id, text, media_paths)
 
-                # Update the last processed post ID for this source to the highest ID found
-                # This ensures we don't miss posts if multiple arrive between checks
-                last_post_ids[source_id] = latest_retrieved_post_id
-                logger.info(f"Updated last processed post ID for source {source_id} to {latest_retrieved_post_id}.")
+            # Always update the last processed post ID to the latest retrieved ID,
+            # even if no new posts were processed in this run. This correctly advances the marker.
+            if latest_retrieved_post_id > last_processed_post_id:
+                 last_post_ids[source_id] = latest_retrieved_post_id
+                 logger.info(f"Updated last processed post ID for source {source_id} to {latest_retrieved_post_id}.")
             else:
-                logger.debug(f"No new posts found for source {source_id}. Last processed ID: {last_processed_post_id}")
+                 logger.debug(f"No genuinely new posts found or processed for source {source_id}. Last processed ID remains {last_processed_post_id}")
 
-        # Initial population of last_post_ids if this is the first check and no posts were found
-        # This prevents reprocessing old posts on subsequent checks if the initial wall was empty
-        elif source_id not in last_post_ids:
-             if response and 'items' in response and not response['items']:
-                 logger.info(f"No posts found for source {source_id} on initial check. Setting last_post_id to 0.")
-                 last_post_ids[source_id] = 0
-             elif not response:
-                  logger.warning(f"Empty or invalid response from wall.get for source {source_id}")
+
+        # This block is only needed for initial population if wall is empty
+        # elif source_id not in last_post_ids:
+        #      logger.info(f"No posts found for source {source_id} on initial check. last_post_id will be set to 0 if not already present.")
+        #      # last_post_ids.setdefault(source_id, 0) # Ensure it's in the dict even if empty
 
     except Exception as e:
         logger.error(f"Error checking for new posts for VK source {source_id}: {e}")
 
 
+async def vk_polling_task(session, api):
+    """
+    Background task to periodically poll all configured VK sources for new posts.
+    """
+    while True:
+        logger.debug("Running periodic VK polling check...")
+        for source_id in config.VK_SOURCE_IDS:
+            await check_for_new_posts(session, api, source_id)
+            # Optional: Add a small delay between checking sources to avoid burst requests
+            await asyncio.sleep(1) # Small delay between sources
+
+        await asyncio.sleep(VK_POLLING_INTERVAL) # Wait before the next full cycle
+
+
 async def start_vk_parser():
     """
-    Initialize VK parser using periodic wall.get checks.
+    Initialize VK parser by setting initial last_post_ids and starting the polling task.
     """
     if not config.VK_TOKEN or not config.VK_SOURCE_IDS:
         logger.warning("VK_TOKEN or VK_SOURCE_IDS not configured. VK parser will not start.")
@@ -300,14 +319,32 @@ async def start_vk_parser():
     async with TokenSession(access_token=config.VK_TOKEN) as session:
         api = API(session)
 
-        # Fetch initial history from each source
-        logger.info("Fetching initial VK history...")
+        # --- Initial Setup: Determine the latest post ID for each source without processing ---
+        logger.info("Initializing VK parser: Determining last post IDs...")
         for source_id in config.VK_SOURCE_IDS:
-            try:
-                await check_for_new_posts(session, api, source_id)
-            except Exception as e:
-                logger.error(f"Error fetching initial history for VK source {source_id}: {e}")
+             vk_owner_id = -source_id
+             try:
+                  # Fetch just the single latest post to get its ID
+                  response = await api.wall.get(owner_id=vk_owner_id, count=1, extended=1)
+                  if response and 'items' in response and response['items']:
+                       latest_post = response['items'][0]
+                       latest_id = latest_post.get('id', 0)
+                       last_post_ids[source_id] = latest_id
+                       logger.info(f"Initialized last post ID for source {source_id} to {latest_id}.")
+                  else:
+                       # If no posts found, initialize with 0
+                       last_post_ids[source_id] = 0
+                       logger.info(f"No posts found for source {source_id} on initialization. Initialized last post ID to 0.")
+             except Exception as e:
+                  logger.error(f"Error initializing last post ID for VK source {source_id}: {e}")
+                  # On error, also initialize with 0 to attempt processing later if needed
+                  last_post_ids[source_id] = 0
 
+        # --- Start the periodic polling task ---
+        logger.info(f"Initialization complete. Starting periodic VK polling task (interval: {VK_POLLING_INTERVAL}s)...")
+        # Create and start the background task
+        asyncio.create_task(vk_polling_task(session, api))
+        logger.info("VK polling task started.")
 
 # Example usage (for testing, will be integrated into main app)
 # if __name__ == "__main__":
