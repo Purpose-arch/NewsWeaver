@@ -17,6 +17,7 @@ from typing import Optional, Union, List
 from logger import logger
 import direct_news
 import pre_moderation
+import vk_parser # Импортируем vk_parser для доступа к TEMP_VK_MEDIA_DIR
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media")
@@ -26,7 +27,7 @@ os.makedirs(TEMP_MEDIA_DIR, exist_ok=True)
 # Формат: {(channel_id, message_id): {данные}}
 pending = {}
 
-async def send_for_moderation(channel_id: int, message_id: int, text: str, client, original_message, source_type: str = "telegram"):
+async def send_for_moderation(channel_id: int, message_id: int, text: str, client, original_message, source_type: str = "telegram", media_paths: Optional[List[str]] = None):
     """
     Places a news message into the in-memory moderation queue and sends it to MODERATION_CHAT_ID with accept/reject buttons.
 
@@ -34,9 +35,10 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
         channel_id: Source channel or chat ID.
         message_id: Original message ID from the source.
         text: Reformulated or checked news text.
-        client: Telethon client instance that received the message.
-        original_message: The original message object from the source.
+        client: Telethon client instance that received the message (can be None for VK).
+        original_message: The original message object from the source (can be None for VK).
         source_type: Source type ("telegram" or "vk").
+        media_paths: List of paths to temporary media files (can be None).
     """
     key = (channel_id, message_id)
 
@@ -51,12 +53,12 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
     # Создаем запись в словаре pending
     pending[key] = {
         "text": cleaned_text,
-        "client": client,
-        "message": original_message,
+        "client": client, # Can be None for VK
+        "message": original_message, # Can be None for VK
         "decided": None,  # None = не принято решение, "accept" или "reject"
         "moderation_msg_ids": [],  # ID сообщений в чате модерации
         "source_type": source_type,
-        "media_paths": []  # Пути к временным медиафайлам
+        "media_paths": media_paths if media_paths is not None else []  # Сохраняем переданные пути медиа
     }
 
     # Создаем кнопки для модерации
@@ -67,95 +69,52 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
         ]
     ]
 
-    # Проверяем, если есть медиа, скачиваем и отправляем вместе с текстом
+    # Проверяем, если есть медиа, используем пути из media_paths
     try:
-        if source_type == "telegram" and hasattr(original_message, "media"):
-            # В Telegram можно прислать несколько медиафайлов в одном сообщении с grouped_id
-            grouped_id = getattr(original_message, 'grouped_id', None)
-            
-            # Создаем временную папку для этого сообщения
-            message_dir = os.path.join(TEMP_MEDIA_DIR, f"tg_{channel_id}_{message_id}")
-            os.makedirs(message_dir, exist_ok=True)
-            
-            # Сохраняем медиафайлы
-            has_media = True
-            media_paths = []
-            
-            # Если это часть альбома
-            if grouped_id:
-                # Получаем все сообщения из альбома
-                entity = getattr(original_message, 'chat_id', None) or getattr(original_message.peer_id, 'channel_id', None)
-                msgs = await client.get_messages(entity, limit=100)  # Лимит 100 для безопасности
-                media_msgs = [m for m in msgs if getattr(m, 'grouped_id', None) == grouped_id]
-                media_msgs.sort(key=lambda m: m.id)  # Сортируем по ID
-                
-                # Скачиваем каждое медиа отдельно
-                for msg in media_msgs:
-                    if hasattr(msg, 'media'):
-                        path = await client.download_media(msg, file=message_dir)
-                        if path:
-                            media_paths.append(path)
-            else:
-                # Если это одиночное медиа
-                path = await client.download_media(original_message, file=message_dir)
-                if path:
-                    media_paths.append(path)
-                else:
-                    has_media = False
-            
-            # Сохраняем пути к медиафайлам для последующей отправки в TargetID
-            pending[key]["media_paths"] = media_paths
-            
-            # Отправляем в чат модерации
-            if has_media and media_paths:
-                if len(media_paths) > 1:
-                    # Если это альбом, отправляем его без текста
-                    album_msgs = await clients.bot_client.send_file(
-                        config.MODERATION_CHAT_ID,
-                        media_paths,
-                        parse_mode='HTML'
-                    )
-                    
-                    # При отправке альбома возвращается список сообщений
-                    if isinstance(album_msgs, list):
-                        for msg in album_msgs:
-                            if hasattr(msg, 'id'):
-                                pending[key]["moderation_msg_ids"].append(msg.id)
-                    elif hasattr(album_msgs, 'id'):
-                        pending[key]["moderation_msg_ids"].append(album_msgs.id)
-                    
-                    # Отправляем отдельно текст с кнопками
-                    text_msg = await clients.bot_client.send_message(
-                        config.MODERATION_CHAT_ID,
-                        cleaned_text,
-                        buttons=buttons,
-                        parse_mode='HTML'
-                    )
-                    if text_msg:
-                        pending[key]["moderation_msg_ids"].append(text_msg.id)
-                else:
-                    # Если это одиночное медиа, отправляем с текстом
-                    msg = await clients.bot_client.send_file(
-                        config.MODERATION_CHAT_ID,
-                        media_paths[0],
-                        caption=cleaned_text,
-                        buttons=buttons,
-                        parse_mode='HTML'
-                    )
-                    if msg:
-                        pending[key]["moderation_msg_ids"].append(msg.id)
-            else:
-                # Если скачивание медиа не удалось, отправляем только текст
-                msg = await clients.bot_client.send_message(
+        has_media = bool(pending[key]["media_paths"])
+        media_to_send = pending[key]["media_paths"]
+
+        if has_media and media_to_send:
+            # Логика отправки медиа (альбом или одиночное) уже существует
+            if len(media_to_send) > 1:
+                # Если это альбом, отправляем его без текста (текст отдельно)
+                album_msgs = await clients.bot_client.send_file(
+                    config.MODERATION_CHAT_ID,
+                    media_to_send,
+                    parse_mode='HTML'
+                )
+
+                # При отправке альбома возвращается список сообщений
+                if isinstance(album_msgs, list):
+                    for msg in album_msgs:
+                        if hasattr(msg, 'id'):
+                            pending[key]["moderation_msg_ids"].append(msg.id)
+                elif hasattr(album_msgs, 'id'):
+                    pending[key]["moderation_msg_ids"].append(album_msgs.id)
+
+                # Отправляем отдельно текст с кнопками
+                text_msg = await clients.bot_client.send_message(
                     config.MODERATION_CHAT_ID,
                     cleaned_text,
                     buttons=buttons,
                     parse_mode='HTML'
                 )
-                if msg:
+                if text_msg: # Проверяем, что сообщение успешно отправлено и имеет ID
+                     pending[key]["moderation_msg_ids"].append(text_msg.id)
+
+            else:
+                # Если это одиночное медиа, отправляем с текстом
+                msg = await clients.bot_client.send_file(
+                    config.MODERATION_CHAT_ID,
+                    media_to_send[0],
+                    caption=cleaned_text,
+                    buttons=buttons,
+                    parse_mode='HTML'
+                )
+                if msg: # Проверяем, что сообщение успешно отправлено и имеет ID
                     pending[key]["moderation_msg_ids"].append(msg.id)
         else:
-            # Если нет медиа, отправляем просто текст с кнопками
+            # Если скачивание медиа не удалось, отправляем только текст
             msg = await clients.bot_client.send_message(
                 config.MODERATION_CHAT_ID,
                 cleaned_text,
@@ -174,6 +133,9 @@ async def regenerate_with_custom_prompt(entry, custom_prompt, replied_msg_id):
     """
     Регенерирует новость с использованием кастомного промпта и отправляет в чат модерации
     """
+    # Используем пути к медиафайлам, которые уже есть в entry
+    media_paths = entry.get("media_paths", [])
+
     try:
         # Получаем текущий текст новости и применяем кастомный промпт
         original_text = entry["text"]
@@ -226,14 +188,14 @@ async def regenerate_with_custom_prompt(entry, custom_prompt, replied_msg_id):
             ]
         ]
         
-        # Отправляем обновленный текст
-        if entry.get("media_paths"):
+        # Отправляем обновленный текст с медиа, если они есть
+        if media_paths:
             # Если есть медиа
-            if len(entry["media_paths"]) > 1:
+            if len(media_paths) > 1:
                 # Для альбома - отправляем медиа без текста
                 album_msgs = await clients.bot_client.send_file(
                     config.MODERATION_CHAT_ID,
-                    entry["media_paths"],
+                    media_paths,
                     parse_mode='HTML'
                 )
                 
@@ -258,7 +220,7 @@ async def regenerate_with_custom_prompt(entry, custom_prompt, replied_msg_id):
                 # Для одиночного файла
                 msg = await clients.bot_client.send_file(
                     config.MODERATION_CHAT_ID,
-                    entry["media_paths"][0],
+                    media_paths[0],
                     caption=new_text,
                     parse_mode='HTML',
                     buttons=buttons
@@ -349,6 +311,9 @@ async def register_handlers():
 
         logger.info(f"Moderator {event.sender_id} - {action} {key} (source: {entry.get('source_type', 'telegram')})")
 
+        # После обработки новости, очищаем временные медиафайлы
+        cleanup_media_files(key)
+
     # Регистрируем обработчик ответов на сообщения для кастомных промптов
     @clients.bot_client.on(events.NewMessage(chats=config.MODERATION_CHAT_ID, func=lambda e: e.is_reply))
     async def custom_prompt_handler(event):
@@ -407,13 +372,55 @@ async def register_handlers():
 
 def cleanup_media_files(key):
     """
-    Очищает скачанные медиафайлы для данного ключа
+    Очищает скачанные медиафайлы для данного ключа.
+    Удаляет временные файлы и их родительскую директорию.
     """
-    channel_id, message_id = key
-    message_dir = os.path.join(TEMP_MEDIA_DIR, f"{channel_id}_{message_id}")
-    if os.path.exists(message_dir):
-        try:
-            shutil.rmtree(message_dir)
-            logger.info(f"Cleaned up media files for {key}")
-        except Exception as e:
-            logger.warning(f"Error cleaning up media files for {key}: {e}")
+    entry = pending.get(key)
+    if not entry:
+        logger.warning(f"No pending entry found for key {key} during cleanup.")
+        return
+
+    media_paths = entry.get("media_paths", [])
+    if not media_paths:
+        # logger.debug(f"No media paths found for key {key} to cleanup.") # Too noisy
+        return
+
+    logger.info(f"Cleaning up {len(media_paths)} media files for {key}...")
+
+    # Attempt to remove each file and its parent directory
+    # We assume all media for one message are in the same temp directory
+    cleaned_dirs = set() # To avoid attempting to remove the same directory multiple times
+
+    for file_path in media_paths:
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                logger.debug(f"Removed file: {file_path}")
+                parent_dir = os.path.dirname(file_path)
+                if parent_dir not in cleaned_dirs:
+                    # Try to remove the parent directory, but only if it's empty
+                    # and is within our known temporary media dirs
+                    if parent_dir.startswith(tempfile.gettempdir()) and parent_dir != tempfile.gettempdir(): # Basic check to stay within temp dir
+                         try:
+                            # Use rmtree on the parent directory
+                            shutil.rmtree(parent_dir)
+                            logger.debug(f"Removed parent directory: {parent_dir}")
+                            cleaned_dirs.add(parent_dir)
+                         except OSError as e: # rmtree might fail if dir is not empty (e.g., due to other files/errors)
+                             logger.warning(f"Could not remove parent directory {parent_dir}: {e}")
+                         except Exception as e:
+                              logger.warning(f"Unexpected error removing directory {parent_dir}: {e}")
+                    else:
+                         logger.warning(f"Skipping removal of parent directory {parent_dir} outside of temp dir or is root temp dir.")
+            except OSError as e:
+                logger.warning(f"Could not remove file {file_path}: {e}")
+            except Exception as e:
+                logger.warning(f"Unexpected error removing file {file_path}: {e}")
+        else:
+            logger.debug(f"File not found for cleanup: {file_path}")
+
+    # Remove the entry from pending after cleanup attempt
+    # This should happen regardless of cleanup success to prevent memory leak
+    if key in pending:
+        del pending[key]
+        logger.info(f"Removed pending entry for {key}.")

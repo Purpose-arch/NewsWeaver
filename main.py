@@ -10,6 +10,7 @@ import requesty
 import publisher
 import direct_news
 import alarm  # Импортируем модуль alarm
+import vk_parser # Импортируем модуль VK парсера
 from clients import start_clients, close_clients, loop
 
 async def on_shutdown():
@@ -35,6 +36,9 @@ async def main():
         
         # Запускаем парсер сообщений из Telegram
         await parser.start_parser()
+        
+        # Запускаем парсер сообщений из VK
+        asyncio.create_task(vk_parser.start_vk_parser())
         
         # Запускаем парсер тревог
         await alarm.start_alarm_bot()
