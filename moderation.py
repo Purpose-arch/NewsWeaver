@@ -16,6 +16,7 @@ import requests
 from typing import Optional, Union, List
 from logger import logger
 import direct_news
+import pre_moderation
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media")
@@ -44,9 +45,12 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
         logger.warning(f"Message {key} already pending for moderation")
         return
 
+    # Очищаем текст перед добавлением в pending
+    cleaned_text = pre_moderation.clean_blockquote_prefix(text)
+
     # Создаем запись в словаре pending
     pending[key] = {
-        "text": text,
+        "text": cleaned_text,
         "client": client,
         "message": original_message,
         "decided": None,  # None = не принято решение, "accept" или "reject"
@@ -123,7 +127,7 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
                     # Отправляем отдельно текст с кнопками
                     text_msg = await clients.bot_client.send_message(
                         config.MODERATION_CHAT_ID,
-                        text,
+                        cleaned_text,
                         buttons=buttons,
                         parse_mode='HTML'
                     )
@@ -134,7 +138,7 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
                     msg = await clients.bot_client.send_file(
                         config.MODERATION_CHAT_ID,
                         media_paths[0],
-                        caption=text,
+                        caption=cleaned_text,
                         buttons=buttons,
                         parse_mode='HTML'
                     )
@@ -144,7 +148,7 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
                 # Если скачивание медиа не удалось, отправляем только текст
                 msg = await clients.bot_client.send_message(
                     config.MODERATION_CHAT_ID,
-                    text,
+                    cleaned_text,
                     buttons=buttons,
                     parse_mode='HTML'
                 )
@@ -154,7 +158,7 @@ async def send_for_moderation(channel_id: int, message_id: int, text: str, clien
             # Если нет медиа, отправляем просто текст с кнопками
             msg = await clients.bot_client.send_message(
                 config.MODERATION_CHAT_ID,
-                text,
+                cleaned_text,
                 buttons=buttons,
                 parse_mode='HTML'
             )
