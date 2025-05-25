@@ -1,5 +1,6 @@
 import asyncio
-from aiovk import API, TokenSession, UserLongPoll
+from aiovk import API, TokenSession
+from aiovk.longpoll import UserLongPoll
 import config
 from logger import logger
 import moderation
