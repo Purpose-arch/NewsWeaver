@@ -123,9 +123,13 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
                 # Предположим, что контент будет в 'choices[0].message.content' или аналогично OpenAI
                 # На основе langdockexample.py видно, что структура может быть прямо в response.json()
                 # Однако, чтобы быть более устойчивым, попробуем предусмотреть структуру OpenAI-like
-                if result and isinstance(result, dict) and "choices" in result and result["choices"]:
-                    if result["choices"][0].get("message") and result["choices"][0]["message"].get("content"):
-                        return result["choices"][0]["message"]["content"].strip()
+                if result and isinstance(result, dict) and "result" in result and result["result"]:
+                    # Langdock API возвращает список в 'result'
+                    for item in result["result"]:
+                        if "content" in item and isinstance(item["content"], list):
+                            for content_item in item["content"]:
+                                if content_item.get("type") == "text" and content_item.get("text"):
+                                    return content_item["text"].strip()
                 logger.warning(f"Unexpected response structure from Langdock API: {result}")
                 return None
         except aiohttp.ClientError as e:
@@ -212,7 +216,7 @@ async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: 
             payload = {
                 "assistant": {
                     "name": "Claude",
-                    "instructions": "", # Для модификации инструкцию можно опустить или задать общую
+                    "instructions": modification_prompt_template, # Для модификации инструкцию можно опустить или задать общую
                     "temperature": 0.7,
                     "model": langdock_model,
                     "capabilities": {}
