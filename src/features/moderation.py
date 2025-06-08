@@ -375,6 +375,32 @@ async def register_handlers():
             await event.reply(f"Произошла ошибка при отправке файла: {e}")
             logger.error(f"Error sending Langdock API keys file to admin {sender_id}: {e}")
 
+    # Новый обработчик для остановки генерации ключей Langdock
+    @clients.bot_client.on(events.NewMessage(pattern='/stop_langdock_keygen'))
+    async def stop_langdock_keygen_handler(event):
+        sender_id = event.sender_id
+        if sender_id not in config.ADMIN_IDS:
+            await event.reply("У вас нет прав для выполнения этой команды.")
+            logger.warning(f"Unauthorized attempt to stop Langdock key generation by user ID: {sender_id}")
+            return
+
+        langdock_key_gen._key_generation_enabled_event.clear()
+        await event.reply("Генерация ключей Langdock API остановлена.")
+        logger.info(f"Admin {sender_id} stopped Langdock API key generation.")
+
+    # Новый обработчик для возобновления генерации ключей Langdock
+    @clients.bot_client.on(events.NewMessage(pattern='/start_langdock_keygen'))
+    async def start_langdock_keygen_handler(event):
+        sender_id = event.sender_id
+        if sender_id not in config.ADMIN_IDS:
+            await event.reply("У вас нет прав для выполнения этой команды.")
+            logger.warning(f"Unauthorized attempt to start Langdock key generation by user ID: {sender_id}")
+            return
+
+        langdock_key_gen._key_generation_enabled_event.set()
+        await event.reply("Генерация ключей Langdock API возобновлена.")
+        logger.info(f"Admin {sender_id} resumed Langdock API key generation.")
+
     # Регистрируем обработчик ответов на сообщения для кастомных промптов
     @clients.bot_client.on(events.NewMessage(chats=config.MODERATION_CHAT_ID, func=lambda e: e.is_reply))
     async def custom_prompt_handler(event):

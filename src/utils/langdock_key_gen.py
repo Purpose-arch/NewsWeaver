@@ -16,6 +16,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 LANGDOCK_API_KEYS_FILE = "langdock_api_keys.json" # Путь к файлу с ключами Langdock
 
+# Асинхронное событие для управления генерацией ключей
+_key_generation_enabled_event = asyncio.Event()
+_key_generation_enabled_event.set() # По умолчанию генерация включена
+
 async def read_langdock_api_keys():
     """
     Asynchronously reads Langdock API keys from the JSON file.
@@ -127,6 +131,9 @@ async def main_langdock_generator():
     logging.info(f"Loaded {len(api_keys)} existing Langdock API keys.")
 
     while True:
+        # Ожидаем, пока генерация не будет разрешена
+        await _key_generation_enabled_event.wait()
+
         logging.info("Attempting to generate a new Langdock API key...")
         new_key = await generate_langdock_api_key()
 
