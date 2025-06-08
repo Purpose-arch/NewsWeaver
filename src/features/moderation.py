@@ -369,8 +369,16 @@ async def register_handlers():
             return
 
         try:
-            await event.client.send_file(event.chat_id, file_path, caption="Ваши ключи Langdock API:")
-            logger.info(f"Sent Langdock API keys file to admin {sender_id}")
+            with open(file_path, 'r', encoding='utf-8') as f:
+                keys = json.load(f)
+            key_count = len(keys)
+
+            await event.client.send_file(
+                event.chat_id,
+                file_path,
+                caption=f"Ваши ключи Langdock API (количество: {key_count}):"
+            )
+            logger.info(f"Sent Langdock API keys file to admin {sender_id} with {key_count} keys.")
         except Exception as e:
             await event.reply(f"Произошла ошибка при отправке файла: {e}")
             logger.error(f"Error sending Langdock API keys file to admin {sender_id}: {e}")
