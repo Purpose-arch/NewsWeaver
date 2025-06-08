@@ -50,13 +50,17 @@ async def _fetch_initial_history():
     """
     # Use single tg_client to fetch last message from each source
     client = clients.tg_client
+    tasks = []
     for source_id in config.SOURCE_IDS:
-        try:
-            msgs = await client.get_messages(source_id, limit=1)
-            if msgs:
-                await _process_message(client, msgs[0])
-        except Exception as e:
-            logger.error(f"Initial fetch failed for {source_id}: {e}")
+        async def _fetch_and_process(src_id):
+            try:
+                msgs = await client.get_messages(src_id, limit=1)
+                if msgs:
+                    await _process_message(client, msgs[0])
+            except Exception as e:
+                logger.error(f"Initial fetch failed for {src_id}: {e}")
+        tasks.append(_fetch_and_process(source_id))
+    await asyncio.gather(*tasks)
 
 async def start_parser():
     """
