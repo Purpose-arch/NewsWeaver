@@ -1,9 +1,9 @@
 import asyncio
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-import config
-from logger import logger
-import publisher
+import src.core.config as config
+from src.core.logger import logger
+import src.features.publisher as publisher
 
 # Initialize single user session client
 tg_client = TelegramClient(

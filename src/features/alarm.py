@@ -8,7 +8,7 @@ from telethon.sessions import StringSession
 from telethon.tl.types import Message  # Импортируем Message для type hinting
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-import config  # Импортируем конфигурацию проекта
+import src.core.config as config  # Импортируем конфигурацию проекта
 
 # Настраиваем локальный логгер только если не был настроен ранее
 logger = logging.getLogger(__name__)

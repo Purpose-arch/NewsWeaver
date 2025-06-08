@@ -1,8 +1,8 @@
 # media.py
 import tempfile
 from telethon import TelegramClient
-from logger import logger
-import clients
+from src.core.logger import logger
+import src.core.clients as clients
 
 async def send_media(client: TelegramClient, target: int, message) -> list[str]:
     """

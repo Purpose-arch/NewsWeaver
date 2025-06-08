@@ -1,8 +1,8 @@
 # voidapi_ai.py
 import asyncio
 from openai import OpenAI
-import config
-from logger import logger
+import src.core.config as config
+from src.core.logger import logger
 
 # Системный промпт для переформулирования новости
 default_prompt = (

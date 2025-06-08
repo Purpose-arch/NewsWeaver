@@ -3,12 +3,12 @@ import asyncio
 import os
 import shutil
 from telethon import Button, events
-import config
-import clients
+import src.core.config as config
+import src.core.clients as clients
 import tempfile
-from logger import logger
-from utils import markdown_to_html
-import publisher
+from src.core.logger import logger
+from src.utils.utils import markdown_to_html
+import src.features.publisher as publisher
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media_direct")

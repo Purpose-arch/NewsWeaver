@@ -1,8 +1,8 @@
 # requesty.py
 import asyncio
 import requests
-import config
-from logger import logger
+import src.core.config as config
+from src.core.logger import logger
 
 # Prompt template for reformulation
 default_prompt = (

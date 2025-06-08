@@ -2,15 +2,15 @@
 import asyncio
 import signal
 import sys
-from logger import logger
-import clients
-import parser
-import moderation
-import requesty
-import publisher
-import direct_news
-import alarm  # Импортируем модуль alarm
-from clients import start_clients, close_clients, loop
+from src.core.logger import logger
+import src.core.clients as clients
+import src.integrations.parser as parser
+import src.features.moderation as moderation
+import src.integrations.requesty as requesty
+import src.features.publisher as publisher
+import src.features.direct_news as direct_news
+import src.features.alarm as alarm  # Импортируем модуль alarm
+from src.core.clients import start_clients, close_clients, loop
 
 async def on_shutdown():
     """

@@ -1,13 +1,13 @@
 import asyncio
 from telethon import events
-import config
-import requesty
+import src.core.config as config
+import src.integrations.requesty as requesty
 # DEPRECATED: import google_ai
-import voidapi_ai
-import moderation
-import clients
-from logger import logger
-import content_filter
+import src.integrations.voidapi_ai as voidapi_ai
+import src.features.moderation as moderation
+import src.core.clients as clients
+from src.core.logger import logger
+import src.features.content_filter as content_filter
 
 async def _process_message(client, message):
     """

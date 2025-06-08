@@ -1,12 +1,12 @@
 # publisher.py
-import config
+import src.core.config as config
 import tempfile
-from logger import logger
-import media
-import clients
-import moderation
+from src.core.logger import logger
+import src.utils.media as media
+import src.core.clients as clients
+import src.features.moderation as moderation
 import os
-from utils import markdown_to_html
+from src.utils.utils import markdown_to_html
 import asyncio
 import aiohttp
 import io

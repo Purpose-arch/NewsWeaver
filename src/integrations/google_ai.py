@@ -1,8 +1,8 @@
 # google_ai.py
 import asyncio
 import google.generativeai as genai
-import config
-from logger import logger
+import src.core.config as config
+from src.core.logger import logger
 
 default_prompt = (
     "Ты – профессиональный помощник по редактуре и оформлению новостей для Telegram-канала.\n"

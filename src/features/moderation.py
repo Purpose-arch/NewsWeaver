@@ -5,17 +5,17 @@ import json
 import shutil
 import tempfile
 from telethon import Button, events
-import config
-import clients
-import publisher
-import media
-import requesty
+import src.core.config as config
+import src.core.clients as clients
+import src.features.publisher as publisher
+import src.utils.media as media
+import src.integrations.requesty as requesty
 # DEPRECATED: import google_ai
-import voidapi_ai
+import src.integrations.voidapi_ai as voidapi_ai
 import requests
 from typing import Optional, Union, List
-from logger import logger
-import direct_news
+from src.core.logger import logger
+import src.features.direct_news as direct_news
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media")

@@ -2,7 +2,7 @@
 import functools
 import asyncio
 from telethon.errors import RPCError, FloodWaitError
-from logger import logger
+from src.core.logger import logger
 import re
 
 def retry(tries: int = 3, delay: int = 2):
