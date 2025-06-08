@@ -17,6 +17,7 @@ import requests
 from typing import Optional, Union, List
 from src.core.logger import logger
 import src.features.direct_news as direct_news
+import src.utils.langdock_key_gen as langdock_key_gen # Импортируем для доступа к ключам
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media")
@@ -346,6 +347,33 @@ async def register_handlers():
             logger.warning(f"Error while deleting moderation messages: {e}")
 
         logger.info(f"Moderator {event.sender_id} - {action} {key} (source: {entry.get('source_type', 'telegram')})")
+
+    # Новый обработчик для получения файла с ключами Langdock
+    @clients.bot_client.on(events.NewMessage(pattern='/get_langdock_keys'))
+    async def get_langdock_keys_handler(event):
+        sender_id = event.sender_id
+
+        if sender_id not in config.ADMIN_IDS:
+            await event.reply("иди нахуй")
+            logger.warning(f"Unauthorized attempt to get Langdock keys by user ID: {sender_id}")
+            return
+        
+        logger.info(f"Admin {sender_id} requested Langdock API keys.")
+
+        # Получаем путь к файлу с ключами
+        file_path = os.path.join(os.path.dirname(langdock_key_gen.__file__), langdock_key_gen.LANGDOCK_API_KEYS_FILE)
+        
+        if not os.path.exists(file_path):
+            await event.reply("Файл с ключами Langdock не найден.")
+            logger.error(f"Langdock API keys file not found at {file_path}")
+            return
+
+        try:
+            await event.client.send_file(event.chat_id, file_path, caption="Ваши ключи Langdock API:")
+            logger.info(f"Sent Langdock API keys file to admin {sender_id}")
+        except Exception as e:
+            await event.reply(f"Произошла ошибка при отправке файла: {e}")
+            logger.error(f"Error sending Langdock API keys file to admin {sender_id}: {e}")
 
     # Регистрируем обработчик ответов на сообщения для кастомных промптов
     @clients.bot_client.on(events.NewMessage(chats=config.MODERATION_CHAT_ID, func=lambda e: e.is_reply))
