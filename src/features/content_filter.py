@@ -60,7 +60,10 @@ async def check_content(text: str) -> bool:
                 ])
                 
                 # Отправляем запрос и получаем ответ
-                response = await chat.send_message(text)
+                response = await asyncio.to_thread(
+                    chat.send_message,
+                    text,
+                )
                 
                 # Проверяем и возвращаем ответ
                 if response and hasattr(response, 'text'):
@@ -74,8 +77,11 @@ async def check_content(text: str) -> bool:
                 logger.error(error_msg)
                 errors.append(error_msg)
             
+            # Небольшая задержка перед использованием следующего ключа
+            await asyncio.sleep(1)
+    
     # Если все модели и ключи не сработали, выводим подробную информацию об ошибках
-    error_summary = "".join(errors)
+    error_summary = "\n".join(errors)
     logger.critical(f"Content check: All models and API keys failed:\n{error_summary}")
     
     # В случае ошибки пропускаем сообщение (не фильтруем его)
