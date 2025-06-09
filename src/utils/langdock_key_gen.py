@@ -14,41 +14,49 @@ import random
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-LANGDOCK_API_KEYS_FILE = "langdock_api_keys.json" # Путь к файлу с ключами Langdock
+LANGDOCK_API_KEYS_FILE = "active_langdock_api_keys.json" # Путь к файлу с активными ключами Langdock
 
 # Асинхронное событие для управления генерацией ключей
 _key_generation_enabled_event = asyncio.Event()
 _key_generation_enabled_event.set() # По умолчанию генерация включена
 
-async def read_langdock_api_keys():
+async def read_langdock_api_keys() -> list[str]:
     """
-    Asynchronously reads Langdock API keys from the JSON file.
+    Asynchronously reads active Langdock API keys from the JSON file.
     """
-    # Проверяем, существует ли файл в текущей директории (utils)
     file_path = os.path.join(os.path.dirname(__file__), LANGDOCK_API_KEYS_FILE)
     if not os.path.exists(file_path):
-        return {}
+        return []
     try:
         f = await asyncio.to_thread(open, file_path, 'r', encoding='utf-8')
         with f:
-            return json.load(f)
+            data = json.load(f)
+            # Ensure it's a list of strings
+            if isinstance(data, list) and all(isinstance(key, str) for key in data):
+                return data
+            else:
+                logging.warning(f"Unexpected data format in {file_path}. Starting with an empty list.")
+                return []
     except json.JSONDecodeError:
-        logging.warning(f"Corrupt or empty JSON file: {file_path}. Starting with an empty dictionary.")
-        return {}
+        logging.warning(f"Corrupt or empty JSON file: {file_path}. Starting with an empty list.")
+        return []
     except Exception as e:
         logging.error(f"Error reading Langdock API keys file: {e}")
-        return {}
+        return []
 
-async def write_langdock_api_keys(keys: dict):
+async def write_langdock_api_keys(keys: list[str]):
     """
-    Asynchronously writes Langdock API keys to the JSON file.
+    Asynchronously writes active Langdock API keys to the JSON file.
+    Ensures only up to two keys are stored.
     """
     file_path = os.path.join(os.path.dirname(__file__), LANGDOCK_API_KEYS_FILE)
     try:
+        # Take only the first two keys
+        keys_to_write = keys[:2]
         f = await asyncio.to_thread(open, file_path, 'w', encoding='utf-8')
         with f:
-            json.dump(keys, f, indent=4)
-        logging.info(f"Successfully saved {len(keys)} Langdock API keys to {file_path}")
+            json.dump(keys_to_write, f, indent=4)
+        logging.info(f"Successfully saved {len(keys_to_write)} Langdock API keys to {file_path}")
     except Exception as e:
         logging.error(f"Error writing Langdock API keys to file: {e}")
 
@@ -127,31 +135,44 @@ async def generate_langdock_api_key():
         logging.error(f"Error generating Langdock API key: {e}")
         return None
 
+async def invalidate_and_generate_new_key(failed_key: str):
+    """
+    Removes a failed key from the active list and triggers generation of a new one.
+    """
+    logging.info(f"Invalidating key {failed_key[:4]}*** and triggering new key generation.")
+    current_keys = await read_langdock_api_keys()
+    updated_keys = [key for key in current_keys if key != failed_key]
+    await write_langdock_api_keys(updated_keys)
+    _key_generation_enabled_event.set() # Ensure generator is active to create a new key
+
 async def main_langdock_generator():
     """
-    Main function to continuously generate and save Langdock API keys.
+    Main function to continuously maintain exactly two active Langdock API keys.
     """
-    api_keys: dict = await read_langdock_api_keys()
-    logging.info(f"Loaded {len(api_keys)} existing Langdock API keys.")
-
     while True:
-        # Ожидаем, пока генерация не будет разрешена
         await _key_generation_enabled_event.wait()
+        
+        api_keys = await read_langdock_api_keys()
+        num_active_keys = len(api_keys)
+        logging.info(f"Currently {num_active_keys} active Langdock API keys.")
 
-        logging.info("Attempting to generate a new Langdock API key...")
-        new_key = await generate_langdock_api_key()
-
-        if new_key:
-            if new_key not in api_keys:
-                api_keys[new_key] = {"if_working": True}
+        if num_active_keys < 2:
+            logging.info(f"Fewer than 2 active keys ({num_active_keys} found). Generating a new one...")
+            new_key = await generate_langdock_api_key()
+            if new_key and new_key not in api_keys:
+                api_keys.append(new_key)
                 await write_langdock_api_keys(api_keys)
                 logging.info(f"Generated and saved new Langdock API key: {new_key}")
+            elif new_key and new_key in api_keys:
+                logging.info(f"Generated key {new_key} already exists. Skipping save.")
             else:
-                logging.info(f"Langdock API key {new_key} already exists. Skipping save.")
+                logging.warning("Langdock API key generation failed.")
         else:
-            logging.warning("Langdock API key generation failed. Retrying in 5 seconds...")
-        
-        await asyncio.sleep(5) # Wait before next attempt
+            logging.info("Two active Langdock API keys are present. Waiting for a key to be invalidated.")
+            # If 2 keys exist, we can pause generation until one is marked as failed
+            _key_generation_enabled_event.clear() # Pause generation until a key is invalidated
+
+        await asyncio.sleep(5) # Check every 5 seconds
 
 if __name__ == "__main__":
     logging.info("Starting Langdock API Key Generator...")

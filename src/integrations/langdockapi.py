@@ -5,12 +5,13 @@ import json
 import os
 import src.core.config as config # Предполагается, что конфиг будет здесь
 from src.core.logger import logger # Предполагается, что логгер будет здесь
+from src.utils.langdock_key_gen import invalidate_and_generate_new_key, _key_generation_enabled_event
 
 # URL Langdock API
 LANGDOCK_API_URL = "https://api.langdock.com/assistant/v1/chat/completions"
 
-# Путь к файлу с API ключами Langdock
-LANGDOCK_API_KEYS_FILE = "langdock_api_keys.json" # Будет находиться в корне проекта или в src/utils, позже уточним
+# Путь к файлу с API ключами Langdock (теперь активными ключами)
+ACTIVE_LANGDOCK_API_KEYS_FILE = "active_langdock_api_keys.json"
 
 # Системный промпт для переформулирования новости (используем тот же, что и в voidapi_ai.py)
 default_prompt = (
@@ -65,32 +66,34 @@ modification_prompt_template = (
 
 async def _load_langdock_api_keys() -> list[str]:
     """
-    Загружает API ключи Langdock из JSON файла.
+    Загружает активные API ключи Langdock из JSON файла.
     """
     keys = []
     try:
-        # Для простоты, пока что предположим, что он будет в корне или в src/utils
-        # Если файл будет в src/utils, то путь будет src/utils/langdock_api_keys.json
-        # DEPRECATED: file_path_root = os.path.join(os.getcwd(), LANGDOCK_API_KEYS_FILE)
-        file_path_src_utils = os.path.join(os.path.dirname(__file__), "..", "utils", LANGDOCK_API_KEYS_FILE)
+        file_path_src_utils = os.path.join(os.path.dirname(__file__), "..", "utils", ACTIVE_LANGDOCK_API_KEYS_FILE)
 
-
-        # DEPRECATED: if os.path.exists(file_path_root):
-        # DEPRECATED:     file_to_read = file_path_root
         if os.path.exists(file_path_src_utils):
             file_to_read = file_path_src_utils
         else:
-            logger.warning(f"Langdock API keys file not found at {file_path_src_utils}.")
+            logger.warning(f"Langdock API keys file not found at {file_path_src_utils}. Generating new keys.")
+            _key_generation_enabled_event.set() # Trigger generation if file is missing
             return []
 
         f = await asyncio.to_thread(open, file_to_read, 'r', encoding='utf-8')
         with f:
             data = json.load(f)
-            # Извлекаем ключи, у которых "if_working": true
-            keys = [key for key, value in data.items() if value.get("if_working", False)]
+            # Expected format is a list of strings
+            if isinstance(data, list) and all(isinstance(key, str) for key in data):
+                keys = data
+            else:
+                logger.warning(f"Unexpected data format in {file_to_read}. Starting with an empty list of keys.")
+                _key_generation_enabled_event.set() # Trigger generation if format is wrong
+                return []
+            
             logger.info(f"Loaded {len(keys)} Langdock API keys from {file_to_read}.")
     except json.JSONDecodeError:
-        logger.warning(f"Corrupt or empty JSON file: {LANGDOCK_API_KEYS_FILE}. Returning empty list of keys.")
+        logger.warning(f"Corrupt or empty JSON file: {ACTIVE_LANGDOCK_API_KEYS_FILE}. Returning empty list of keys and triggering generation.")
+        _key_generation_enabled_event.set() # Trigger generation if file is corrupt
     except Exception as e:
         logger.error(f"Error loading Langdock API keys: {e}")
     return keys
@@ -144,27 +147,28 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
 async def reformulate_text(text: str) -> str:
     """
     Переформулирует текст через Langdock API.
-    Использует систему fallback: перебирает все доступные ключи.
+    Использует систему fallback: перебирает все доступные ключи, инвалидируя нерабочие.
     """
     errors = []
-    # Langdock, в отличие от VoidAI, не имеет "моделей", явно указываемых в запросе,
-    # модель обычно определяется на стороне ассистента или по умолчанию.
-    # Так как в langdockexample.py указана "model": "o3", будем использовать её.
-    langdock_model = "claude-sonnet-4@20250514" # Предполагаем, что это будет константа или из конфига
+    langdock_model = "claude-sonnet-4@20250514"
 
-    # Загружаем ключи Langdock
+    # Загружаем ключи Langdock. Каждый раз загружаем, чтобы получить актуальный список.
     keys_to_try = await _load_langdock_api_keys()
 
     if not keys_to_try:
-        logger.critical("No Langdock API keys found or configured.")
-        raise Exception("No Langdock API keys configured")
+        logger.critical("No Langdock API keys found or configured. Attempting to generate.")
+        # Wait for generator to potentially create keys
+        await asyncio.sleep(5) # Give some time for generation
+        keys_to_try = await _load_langdock_api_keys() # Try loading again
+        if not keys_to_try:
+            raise Exception("No Langdock API keys configured or generated after waiting.")
 
-    for key in keys_to_try:
+    for key in list(keys_to_try): # Iterate over a copy, as keys_to_try might change
         try:
             payload = {
                 "assistant": {
-                    "name": "Claude", # Имя ассистента из langdockexample.py
-                    "instructions": default_prompt, # Используем наш промпт
+                    "name": "Claude",
+                    "instructions": default_prompt,
                     "temperature": 0.7,
                     "model": langdock_model,
                     "capabilities": {}
@@ -182,14 +186,18 @@ async def reformulate_text(text: str) -> str:
             if response_content:
                 logger.info(f"Successfully used Langdock API with key {key[:4]}*** for reformulation.")
                 return response_content
+            else:
+                logger.warning(f"Empty response from Langdock API with key {key[:4]}*** during reformulation. Invalidating key.")
+                await invalidate_and_generate_new_key(key)
+                errors.append(f"Empty response with key {key[:4]}***")
 
-            logger.warning(f"Empty response from Langdock API with key {key[:4]}*** during reformulation.")
         except Exception as e:
-            error_msg = f"Error with Langdock API key {key[:4]}*** during reformulation: {str(e)}"
+            error_msg = f"Error with Langdock API key {key[:4]}*** during reformulation: {str(e)}. Invalidating key."
             logger.error(error_msg)
             errors.append(error_msg)
+            await invalidate_and_generate_new_key(key) # Invalidate the key on error
 
-        await asyncio.sleep(1) # Небольшая задержка перед использованием следующего ключа
+        await asyncio.sleep(1) # Small delay before trying next key
 
     error_summary = "\n".join(errors)
     logger.critical(f"All Langdock API keys failed for text reformulation:\n{error_summary}")
@@ -198,24 +206,27 @@ async def reformulate_text(text: str) -> str:
 async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: str) -> str:
     """
     Модифицирует уже переформулированный текст с использованием кастомного промпта через Langdock API.
-    Использует систему fallback: перебирает все доступные ключи.
+    Использует систему fallback: перебирает все доступные ключи, инвалидируя нерабочие.
     """
     prompt = modification_prompt_template.format(text=reformulated_text, custom_prompt=custom_prompt)
     errors = []
-    langdock_model = "claude-sonnet-4@20250514" # Предполагаем, что это будет константа или из конфига
+    langdock_model = "claude-sonnet-4@20250514"
 
     keys_to_try = await _load_langdock_api_keys()
 
     if not keys_to_try:
-        logger.critical("No Langdock API keys found or configured.")
-        raise Exception("No Langdock API keys configured")
+        logger.critical("No Langdock API keys found or configured. Attempting to generate.")
+        await asyncio.sleep(5) # Give some time for generation
+        keys_to_try = await _load_langdock_api_keys() # Try loading again
+        if not keys_to_try:
+            raise Exception("No Langdock API keys configured or generated after waiting.")
 
-    for key in keys_to_try:
+    for key in list(keys_to_try): # Iterate over a copy
         try:
             payload = {
                 "assistant": {
                     "name": "Claude",
-                    "instructions": modification_prompt_template, # Для модификации инструкцию можно опустить или задать общую
+                    "instructions": modification_prompt_template,
                     "temperature": 0.7,
                     "model": langdock_model,
                     "capabilities": {}
@@ -223,7 +234,7 @@ async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: 
                 "messages": [
                     {
                         "role": "user",
-                        "content": prompt, # Кастомный промпт как пользовательское сообщение
+                        "content": prompt,
                     }
                 ]
             }
@@ -233,12 +244,15 @@ async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: 
             if response_content:
                 logger.info(f"Successfully used Langdock API with key {key[:4]}*** for modification.")
                 return response_content
-
-            logger.warning(f"Empty response from Langdock API with key {key[:4]}*** during modification.")
+            else:
+                logger.warning(f"Empty response from Langdock API with key {key[:4]}*** during modification. Invalidating key.")
+                await invalidate_and_generate_new_key(key)
+                errors.append(f"Empty response with key {key[:4]}***")
         except Exception as e:
-            error_msg = f"Error with Langdock API key {key[:4]}*** during modification: {str(e)}"
+            error_msg = f"Error with Langdock API key {key[:4]}*** during modification: {str(e)}. Invalidating key."
             logger.error(error_msg)
             errors.append(error_msg)
+            await invalidate_and_generate_new_key(key)
 
         await asyncio.sleep(1)
 

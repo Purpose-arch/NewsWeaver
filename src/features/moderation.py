@@ -348,67 +348,6 @@ async def register_handlers():
 
         logger.info(f"Moderator {event.sender_id} - {action} {key} (source: {entry.get('source_type', 'telegram')})")
 
-    # Новый обработчик для получения файла с ключами Langdock
-    @clients.bot_client.on(events.NewMessage(pattern='/get_langdock_keys'))
-    async def get_langdock_keys_handler(event):
-        sender_id = event.sender_id
-
-        if sender_id not in config.ADMIN_IDS:
-            await event.reply("иди нахуй")
-            logger.warning(f"Unauthorized attempt to get Langdock keys by user ID: {sender_id}")
-            return
-        
-        logger.info(f"Admin {sender_id} requested Langdock API keys.")
-
-        # Получаем путь к файлу с ключами
-        file_path = os.path.join(os.path.dirname(langdock_key_gen.__file__), langdock_key_gen.LANGDOCK_API_KEYS_FILE)
-        
-        if not os.path.exists(file_path):
-            await event.reply("Файл с ключами Langdock не найден.")
-            logger.error(f"Langdock API keys file not found at {file_path}")
-            return
-
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                keys = json.load(f)
-            key_count = len(keys)
-
-            await event.client.send_file(
-                event.chat_id,
-                file_path,
-                caption=f"Ваши ключи Langdock API (количество: {key_count}):"
-            )
-            logger.info(f"Sent Langdock API keys file to admin {sender_id} with {key_count} keys.")
-        except Exception as e:
-            await event.reply(f"Произошла ошибка при отправке файла: {e}")
-            logger.error(f"Error sending Langdock API keys file to admin {sender_id}: {e}")
-
-    # Новый обработчик для остановки генерации ключей Langdock
-    @clients.bot_client.on(events.NewMessage(pattern='/stop_langdock_keygen'))
-    async def stop_langdock_keygen_handler(event):
-        sender_id = event.sender_id
-        if sender_id not in config.ADMIN_IDS:
-            await event.reply("У вас нет прав для выполнения этой команды.")
-            logger.warning(f"Unauthorized attempt to stop Langdock key generation by user ID: {sender_id}")
-            return
-
-        langdock_key_gen._key_generation_enabled_event.clear()
-        await event.reply("Генерация ключей Langdock API остановлена.")
-        logger.info(f"Admin {sender_id} stopped Langdock API key generation.")
-
-    # Новый обработчик для возобновления генерации ключей Langdock
-    @clients.bot_client.on(events.NewMessage(pattern='/start_langdock_keygen'))
-    async def start_langdock_keygen_handler(event):
-        sender_id = event.sender_id
-        if sender_id not in config.ADMIN_IDS:
-            await event.reply("У вас нет прав для выполнения этой команды.")
-            logger.warning(f"Unauthorized attempt to start Langdock key generation by user ID: {sender_id}")
-            return
-
-        langdock_key_gen._key_generation_enabled_event.set()
-        await event.reply("Генерация ключей Langdock API возобновлена.")
-        logger.info(f"Admin {sender_id} resumed Langdock API key generation.")
-
     # Регистрируем обработчик ответов на сообщения для кастомных промптов
     @clients.bot_client.on(events.NewMessage(chats=config.MODERATION_CHAT_ID, func=lambda e: e.is_reply))
     async def custom_prompt_handler(event):
@@ -461,6 +400,16 @@ async def register_handlers():
                 
         except Exception as e:
             logger.error(f"Error in custom prompt handler: {e}")
+
+    # Новый обработчик для команды /start
+    @clients.bot_client.on(events.NewMessage(pattern='/start'))
+    async def start_handler(event):
+        sender_id = event.sender_id
+        if sender_id not in config.ADMIN_IDS:
+            await event.reply("иди нахуй долбоеб")
+            logger.warning(f"Unauthorized /start command from user ID: {sender_id}")
+            return
+        logger.info(f"Admin {sender_id} used /start command.")
 
     # Регистрируем обработчики из модуля direct_news
     await direct_news.register_handlers()
