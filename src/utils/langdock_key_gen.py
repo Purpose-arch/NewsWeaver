@@ -68,6 +68,10 @@ async def get_csrf(session: aiohttp.ClientSession, headers: dict) -> str:
         login_page_text = await response.text()
     soup = bs4.BeautifulSoup(login_page_text, "lxml")
     script = soup.find("script", id="__NEXT_DATA__")
+    
+    if not script or not script.string:
+        raise Exception("Could not find __NEXT_DATA__ script or its content.")
+        
     next_data = json.loads(script.string)
     csrf = next_data["props"]["pageProps"]["csrfToken"]
     return csrf

@@ -35,13 +35,12 @@ async def check_content(text: str) -> bool:
     """
     errors = []
     
-    # Используем список моделей в обратном порядке для фильтрации
-    # (более легкие модели в приоритете для простых задач)
-    reversed_models = list(reversed(config.AI_MODELS))
-    logger.info(f"Content filter using models in reverse order: {reversed_models}")
+    # Используем список моделей в прямом порядке
+    models = config.AI_MODELS
+    logger.info(f"Content filter using models in order: {models}")
     
-    # Перебираем модели в обратном порядке
-    for model_name in reversed_models:
+    # Перебираем модели в прямом порядке
+    for model_name in models:
         # Для каждой модели пробуем все ключи API
         for key in config.GOOGLE_AI_API_KEYS:
             try:
@@ -76,10 +75,7 @@ async def check_content(text: str) -> bool:
                 error_msg = f"Content check error with model {model_name}, API key {key[:4]}***: {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-            
-            # Небольшая задержка перед использованием следующего ключа
-            await asyncio.sleep(1)
-    
+
     # Если все модели и ключи не сработали, выводим подробную информацию об ошибках
     error_summary = "\n".join(errors)
     logger.critical(f"Content check: All models and API keys failed:\n{error_summary}")
