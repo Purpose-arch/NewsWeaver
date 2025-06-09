@@ -115,18 +115,9 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
     async with aiohttp.ClientSession() as session:
         try:
             async with session.post(LANGDOCK_API_URL, json=payload, headers=headers) as response:
-                response.raise_for_status()  # Выбросит исключение для статусов 4xx/5xx
+                response.raise_for_status()
                 result = await response.json()
-                # Извлекаем контент из ответа Langdock, аналогично langdockexample.py
-                # response = httpx.post(url, json=payload, headers=headers)
-                # print(response.json())
-                # Langdock API возвращает немного другую структуру, чем OpenAI, нужно адаптировать
-                # Если смотреть на langdockexample.py, там просто ответ от httpx, без разбора структуры.
-                # Предположим, что контент будет в 'choices[0].message.content' или аналогично OpenAI
-                # На основе langdockexample.py видно, что структура может быть прямо в response.json()
-                # Однако, чтобы быть более устойчивым, попробуем предусмотреть структуру OpenAI-like
                 if result and isinstance(result, dict) and "result" in result and result["result"]:
-                    # Langdock API возвращает список в 'result'
                     for item in result["result"]:
                         if "content" in item and isinstance(item["content"], list):
                             for content_item in item["content"]:
@@ -151,8 +142,6 @@ async def reformulate_text(text: str) -> str:
     """
     errors = []
     langdock_model = "claude-sonnet-4@20250514"
-
-    # Загружаем ключи Langdock. Каждый раз загружаем, чтобы получить актуальный список.
     keys_to_try = await _load_langdock_api_keys()
 
     if not keys_to_try:
