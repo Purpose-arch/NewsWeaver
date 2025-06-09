@@ -64,6 +64,24 @@ modification_prompt_template = (
     "В ответе только финальный HTML-код."
 )
 
+# Промпт для проверки содержимого новости для Langdock
+content_check_prompt_langdock = """
+Ты - система классификации новостных сообщений. Твоя задача - определить, относится ли входящее сообщение к одной из следующих категорий:
+
+1. Коммерческая реклама (полностью рекламное сообщение)
+2. Сообщение о ракетной опасности/опасности БПЛа или отбой таких опасностей
+
+Правила:
+- Если сообщение полностью является коммерческой рекламой ИЛИ содержит информацию о ракетной опасности/опасности БПЛа/отбое опасности - ответь только "YES"
+- Во всех остальных случаях - ответь только "NO"
+
+Определения:
+- Коммерческая реклама: сообщения, полностью направленные на продажу товаров/услуг, объявления о скидках, акциях, промо-предложениях
+- Сообщения об опасности: предупреждения о воздушной тревоге, ракетной атаке, угрозе БПЛа, отбои тревог
+
+Твой ответ должен содержать ТОЛЬКО "YES" или "NO" без пояснений.
+"""
+
 async def _load_langdock_api_keys() -> list[str]:
     """
     Загружает активные API ключи Langdock из JSON файла.
@@ -192,6 +210,79 @@ async def reformulate_text(text: str) -> str:
     logger.critical(f"All Langdock API keys failed for text reformulation:\n{error_summary}")
     raise Exception("All Langdock API keys failed for text reformulation")
 
+async def check_content_with_langdock(text: str) -> bool:
+    """
+    Проверяет содержимое новости через Langdock API.
+    Использует систему fallback: перебирает все доступные ключи, инвалидируя нерабочие.
+    """
+    errors = []
+    langdock_model = "claude-sonnet-4@20250514"
+
+    keys_to_try = await _load_langdock_api_keys()
+
+    if not keys_to_try:
+        logger.critical("No Langdock API keys found or configured for content checking. Attempting to generate.")
+        # Wait for generator to potentially create keys
+        # Use a polling mechanism instead of fixed sleep
+        start_time = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start_time < 60: # 60 seconds timeout
+            keys_to_try = await _load_langdock_api_keys()
+            if keys_to_try:
+                break
+            await asyncio.sleep(1) # Check every second
+        
+        if not keys_to_try:
+            raise Exception("No Langdock API keys configured or generated after waiting for content checking.")
+
+    for key in list(keys_to_try): # Iterate over a copy, as keys_to_try might change
+        try:
+            payload = {
+                "assistant": {
+                    "name": "Claude",
+                    "instructions": content_check_prompt_langdock,
+                    "temperature": 0.0, # Низкая температура для классификации
+                    "model": langdock_model,
+                    "capabilities": {}
+                },
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": text,
+                    }
+                ]
+            }
+
+            response_content = await _make_langdock_request(payload, key)
+
+            if response_content:                
+                result = response_content.strip().upper()
+                if result == "YES":
+                    logger.info(f"Content check with Langdock API key {key[:4]}***: Filtered (YES).")
+                    return True
+                elif result == "NO":
+                    logger.info(f"Content check with Langdock API key {key[:4]}***: Not filtered (NO).")
+                    return False
+                else:
+                    logger.warning(f"Unexpected response from content check model {langdock_model} with API key {key[:4]}***: {response_content}. Invalidating key.")
+                    await invalidate_and_generate_new_key(key)
+                    errors.append(f"Unexpected response '{response_content}' with key {key[:4]}***")
+            else:
+                logger.warning(f"Empty response from content check model {langdock_model} with API key {key[:4]}***. Invalidating key.")
+                await invalidate_and_generate_new_key(key)
+                errors.append(f"Empty response with key {key[:4]}***")
+
+        except Exception as e:
+            error_msg = f"Error with Langdock API key {key[:4]}*** during content check: {str(e)}. Invalidating key."
+            logger.error(error_msg)
+            errors.append(error_msg)
+            await invalidate_and_generate_new_key(key)
+
+        await asyncio.sleep(1) # Small delay before trying next key
+
+    error_summary = "\n".join(errors)
+    logger.critical(f"All Langdock API keys failed for content checking:\n{error_summary}")
+    raise Exception("All Langdock API keys failed for content checking")
+
 async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: str) -> str:
     """
     Модифицирует уже переформулированный текст с использованием кастомного промпта через Langdock API.
@@ -205,8 +296,14 @@ async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: 
 
     if not keys_to_try:
         logger.critical("No Langdock API keys found or configured. Attempting to generate.")
-        await asyncio.sleep(5) # Give some time for generation
-        keys_to_try = await _load_langdock_api_keys() # Try loading again
+        # Use a polling mechanism instead of fixed sleep
+        start_time = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start_time < 60: # 60 seconds timeout
+            keys_to_try = await _load_langdock_api_keys()
+            if keys_to_try:
+                break
+            await asyncio.sleep(1) # Check every second
+        
         if not keys_to_try:
             raise Exception("No Langdock API keys configured or generated after waiting.")
 
