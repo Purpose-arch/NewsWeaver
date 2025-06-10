@@ -3,6 +3,7 @@ import asyncio
 import aiohttp
 import json
 import os
+import re
 import src.core.config as config # Предполагается, что конфиг будет здесь
 from src.core.logger import logger # Предполагается, что логгер будет здесь
 from src.utils.langdock_key_gen import invalidate_and_generate_new_key, _key_generation_enabled_event
@@ -261,7 +262,13 @@ async def check_content_with_langdock(text: str) -> bool:
             response_content = await _make_langdock_request(payload, key)
 
             if response_content:                
-                result = response_content.strip().upper()
+                # Use regex to find YES or NO at the end of the string, ignoring any leading text including <thinking> blocks
+                match = re.search(r"\b(YES|NO)\b\s*$", response_content.strip().upper())
+                if match:
+                    result = match.group(1)
+                else:
+                    result = None # No valid YES/NO found
+
                 if result == "YES":
                     logger.info(f"Content check with Langdock API key {key[:4]}***: Filtered (YES).")
                     return True
