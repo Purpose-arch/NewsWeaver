@@ -160,7 +160,7 @@ async def reformulate_text(text: str) -> str:
     Использует систему fallback: перебирает все доступные ключи, инвалидируя нерабочие.
     """
     errors = []
-    langdock_model = "claude-sonnet-4@20250514"
+    langdock_model = "gpt-4.5-preview"
     keys_to_try = await _load_langdock_api_keys()
 
     if not keys_to_try:
@@ -175,7 +175,7 @@ async def reformulate_text(text: str) -> str:
         try:
             payload = {
                 "assistant": {
-                    "name": "Claude",
+                    "name": "GPT",
                     "instructions": default_prompt,
                     "temperature": 0.7,
                     "model": langdock_model,
@@ -217,7 +217,7 @@ async def check_content_with_langdock(text: str) -> bool:
     Использует систему fallback: перебирает все доступные ключи, инвалидируя нерабочие.
     """
     errors = []
-    langdock_model = "claude-sonnet-4@20250514"
+    langdock_model = "gpt-4.5-preview"
 
     keys_to_try = await _load_langdock_api_keys()
 
@@ -239,7 +239,7 @@ async def check_content_with_langdock(text: str) -> bool:
         try:
             payload = {
                 "assistant": {
-                    "name": "Claude",
+                    "name": "GPT",
                     "instructions": content_check_prompt_langdock,
                     "temperature": 0.0, # Низкая температура для классификации
                     "model": langdock_model,
@@ -291,7 +291,7 @@ async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: 
     """
     prompt = modification_prompt_template.format(text=reformulated_text, custom_prompt=custom_prompt)
     errors = []
-    langdock_model = "claude-sonnet-4@20250514"
+    langdock_model = "gpt-4.5-preview"
 
     keys_to_try = await _load_langdock_api_keys()
 
@@ -312,7 +312,7 @@ async def modify_text_with_custom_prompt(reformulated_text: str, custom_prompt: 
         try:
             payload = {
                 "assistant": {
-                    "name": "Claude",
+                    "name": "GPT",
                     "instructions": modification_prompt_template,
                     "temperature": 0.7,
                     "model": langdock_model,
