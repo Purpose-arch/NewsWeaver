@@ -140,14 +140,21 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
                 if result and isinstance(result, dict) and "result" in result and result["result"]:
                     for item in result["result"]:
                         if "content" in item:
-                            # Handle cases where content is a direct string (e.g., from claude-sonnet-4-eu)
-                            if isinstance(item["content"], str):
-                                return item["content"].strip()
-                            # Handle cases where content is a list of objects (e.g., from older models or specific tool calls)
-                            elif isinstance(item["content"], list):
-                                for content_item in item["content"]:
+                            raw_content = item["content"]
+                            cleaned_content = None
+
+                            if isinstance(raw_content, str):
+                                # Remove <thinking> or <anon_thinking> blocks and their content
+                                cleaned_content = re.sub(r'<[^>]*?thinking>.*?</[^>]*?thinking>', '', raw_content, flags=re.DOTALL).strip()
+                            elif isinstance(raw_content, list):
+                                for content_item in raw_content:
                                     if content_item.get("type") == "text" and content_item.get("text"):
-                                        return content_item["text"].strip()
+                                        # Remove <thinking> or <anon_thinking> blocks from list content as well
+                                        cleaned_content = re.sub(r'<[^>]*?thinking>.*?</[^>]*?thinking>', '', content_item["text"], flags=re.DOTALL).strip()
+                                        break # Found text content, no need to check other items in list
+                            
+                            if cleaned_content:
+                                return cleaned_content
                 logger.warning(f"Unexpected response structure from Langdock API: {result}")
                 return None
         except aiohttp.ClientError as e:
