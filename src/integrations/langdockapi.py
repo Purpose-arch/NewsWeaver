@@ -138,10 +138,15 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
                 result = await response.json()
                 if result and isinstance(result, dict) and "result" in result and result["result"]:
                     for item in result["result"]:
-                        if "content" in item and isinstance(item["content"], list):
-                            for content_item in item["content"]:
-                                if content_item.get("type") == "text" and content_item.get("text"):
-                                    return content_item["text"].strip()
+                        if "content" in item:
+                            # Handle cases where content is a direct string (e.g., from claude-sonnet-4-eu)
+                            if isinstance(item["content"], str):
+                                return item["content"].strip()
+                            # Handle cases where content is a list of objects (e.g., from older models or specific tool calls)
+                            elif isinstance(item["content"], list):
+                                for content_item in item["content"]:
+                                    if content_item.get("type") == "text" and content_item.get("text"):
+                                        return content_item["text"].strip()
                 logger.warning(f"Unexpected response structure from Langdock API: {result}")
                 return None
         except aiohttp.ClientError as e:
