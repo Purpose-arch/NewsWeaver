@@ -137,6 +137,7 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
             async with session.post(LANGDOCK_API_URL, json=payload, headers=headers) as response:
                 response.raise_for_status()
                 result = await response.json()
+                logger.debug(f"Raw Langdock API response: {json.dumps(result, ensure_ascii=False, indent=2)}")
                 if result and isinstance(result, dict) and "result" in result and result["result"]:
                     for item in result["result"]:
                         if "content" in item:
@@ -154,6 +155,7 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
                                         break # Found text content, no need to check other items in list
                             
                             if cleaned_content:
+                                logger.debug(f"Cleaned Langdock API response content: {cleaned_content}")
                                 return cleaned_content
                 logger.warning(f"Unexpected response structure from Langdock API: {result}")
                 return None
