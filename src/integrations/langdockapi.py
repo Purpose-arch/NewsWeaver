@@ -132,8 +132,8 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
     Отправляет запрос к Langdock API и возвращает ответ.
     """
     headers = await _get_langdock_headers(api_key)
-    async with aiohttp.ClientSession() as session:
-        try:
+    try:
+        async with aiohttp.ClientSession() as session:
             async with session.post(LANGDOCK_API_URL, json=payload, headers=headers) as response:
                 response.raise_for_status()
                 result = await response.json()
@@ -145,13 +145,13 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
                             cleaned_content = None
 
                             if isinstance(raw_content, str):
-                                # Remove <thinking> or <anon_thinking> blocks and their content
-                                cleaned_content = re.sub(r'<[^>]*?thinking>.*?</[^>]*?thinking>', '', raw_content, flags=re.DOTALL).strip()
+                                # Remove all thinking/anon blocks and their content using regex
+                                cleaned_content = re.sub(r"<[^>]*?(?:thinking|anon)[^>]*?>.*?<\/[^>]*?(?:thinking|anon)[^>]*?>", "", raw_content, flags=re.DOTALL).strip()
                             elif isinstance(raw_content, list):
                                 for content_item in raw_content:
                                     if content_item.get("type") == "text" and content_item.get("text"):
-                                        # Remove <thinking> or <anon_thinking> blocks from list content as well
-                                        cleaned_content = re.sub(r'<[^>]*?thinking>.*?</[^>]*?thinking>', '', content_item["text"], flags=re.DOTALL).strip()
+                                        # Remove all thinking/anon blocks from list content as well
+                                        cleaned_content = re.sub(r"<[^>]*?(?:thinking|anon)[^>]*?>.*?<\/[^>]*?(?:thinking|anon)[^>]*?>", "", content_item["text"], flags=re.DOTALL).strip()
                                         break # Found text content, no need to check other items in list
                             
                             if cleaned_content:
@@ -159,15 +159,15 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
                                 return cleaned_content
                 logger.warning(f"Unexpected response structure from Langdock API: {result}")
                 return None
-        except aiohttp.ClientError as e:
-            logger.error(f"Client error during Langdock API request: {e}")
-            return None
-        except json.JSONDecodeError:
-            logger.error("Failed to decode JSON response from Langdock API.")
-            return None
-        except Exception as e:
-            logger.error(f"An unexpected error occurred during Langdock API request: {e}")
-            return None
+    except aiohttp.ClientError as e:
+        logger.error(f"Client error during Langdock API request: {e}")
+        return None
+    except json.JSONDecodeError:
+        logger.error("Failed to decode JSON response from Langdock API.")
+        return None
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during Langdock API request: {e}")
+        return None
 
 async def reformulate_text(text: str) -> str:
     """
