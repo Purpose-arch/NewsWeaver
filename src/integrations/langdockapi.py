@@ -132,8 +132,8 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
     Отправляет запрос к Langdock API и возвращает ответ.
     """
     headers = await _get_langdock_headers(api_key)
-    try:
-        async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession() as session:
+        try:
             async with session.post(LANGDOCK_API_URL, json=payload, headers=headers) as response:
                 response.raise_for_status()
                 result = await response.json()
@@ -163,15 +163,15 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
                                 return cleaned_content
                 logger.warning(f"Unexpected response structure from Langdock API: {result}")
                 return None
-    except aiohttp.ClientError as e:
-        logger.error(f"Client error during Langdock API request: {e}")
-        return None
-    except json.JSONDecodeError:
-        logger.error("Failed to decode JSON response from Langdock API.")
-        return None
-    except Exception as e:
-        logger.error(f"An unexpected error occurred during Langdock API request: {e}")
-        return None
+        except aiohttp.ClientError as e:
+            logger.error(f"Client error during Langdock API request: {e}")
+            return None
+        except json.JSONDecodeError:
+            logger.error("Failed to decode JSON response from Langdock API.")
+            return None
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during Langdock API request: {e}")
+            return None
 
 async def reformulate_text(text: str) -> str:
     """
