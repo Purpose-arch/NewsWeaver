@@ -143,21 +143,15 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
                         if "content" in item:
                             raw_content = item["content"]
                             cleaned_content = None
-
                             if isinstance(raw_content, str):
-                                # Step 1: Remove specific '<anon>thinking>' blocks first
                                 temp_content = re.sub(r"<anon>thinking>.*?<\/anon>thinking>", "", raw_content, flags=re.DOTALL)
-                                # Step 2: Remove any other general thinking/anon blocks
                                 cleaned_content = re.sub(r"<[^>]*?(?:thinking|anon)[^>]*?>.*?<\/[^>]*?(?:thinking|anon)[^>]*?>", "", temp_content, flags=re.DOTALL).strip()
                             elif isinstance(raw_content, list):
                                 for content_item in raw_content:
                                     if content_item.get("type") == "text" and content_item.get("text"):
-                                        # Step 1: Remove specific '<anon>thinking>' blocks first from list content
                                         temp_content = re.sub(r"<anon>thinking>.*?<\/anon>thinking>", "", content_item["text"], flags=re.DOTALL)
-                                        # Step 2: Remove any other general thinking/anon blocks from list content
                                         cleaned_content = re.sub(r"<[^>]*?(?:thinking|anon)[^>]*?>.*?<\/[^>]*?(?:thinking|anon)[^>]*?>", "", temp_content, flags=re.DOTALL).strip()
-                                        break # Found text content, no need to check other items in list
-                            
+                                        break
                             if cleaned_content:
                                 logger.debug(f"Cleaned Langdock API response content: {cleaned_content}")
                                 return cleaned_content
