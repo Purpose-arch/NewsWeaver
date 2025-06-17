@@ -21,7 +21,7 @@ default_prompt = """
 </role>
 
 <goal>
-Преобразовать входной новостной текст в валидный HTML-код для Telegram, создав краткую, динамичную и информативную новость с высокой вовлеченностью читателей.
+Преобразовать входной текст в валидный HTML-код для Telegram, создав краткую, динамичную и информативную новость с высокой вовлеченностью читателей.
 </goal>
 
 <language_style>
@@ -305,11 +305,28 @@ async def _make_langdock_request(payload: dict, api_key: str) -> str | None:
                             if isinstance(raw_content, str):
                                 temp_content = re.sub(r"<anon>thinking>.*?<\/anon>thinking>", "", raw_content, flags=re.DOTALL)
                                 cleaned_content = re.sub(r"<[^>]*?(?:thinking|anon)[^>]*?>.*?<\/[^>]*?(?:thinking|anon)[^>]*?>", "", temp_content, flags=re.DOTALL).strip()
+
+                                # Added logic to handle plain 'thinking>' marker
+                                if 'thinking>' in cleaned_content:
+                                    parts = cleaned_content.split('thinking>', 1)
+                                    if len(parts) > 1:
+                                        cleaned_content = parts[1].strip()
+                                    else:
+                                        logger.warning("Found 'thinking>' in string content but split did not yield two parts. Original content may be malformed.")
                             elif isinstance(raw_content, list):
                                 for content_item in raw_content:
                                     if content_item.get("type") == "text" and content_item.get("text"):
                                         temp_content = re.sub(r"<anon>thinking>.*?<\/anon>thinking>", "", content_item["text"], flags=re.DOTALL)
                                         cleaned_content = re.sub(r"<[^>]*?(?:thinking|anon)[^>]*?>.*?<\/[^>]*?(?:thinking|anon)[^>]*?>", "", temp_content, flags=re.DOTALL).strip()
+                                        
+                                        # Added logic to handle plain 'thinking>' marker in list item
+                                        if 'thinking>' in cleaned_content:
+                                            parts = cleaned_content.split('thinking>', 1)
+                                            if len(parts) > 1:
+                                                cleaned_content = parts[1].strip()
+                                            else:
+                                                logger.warning("Found 'thinking>' in list item but split did not yield two parts. Original content may be malformed.")
+                                        
                                         break
                             if cleaned_content:
                                 logger.debug(f"Cleaned Langdock API response content: {cleaned_content}")
