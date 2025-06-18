@@ -282,7 +282,7 @@ async def reformulate_text(text: str) -> str:
     """
     response_content = await _make_cortex_request(default_prompt, text, temperature=0.7)
     if response_content:
-        logger.info("Successfully reformulated text using Cortex API.")
+        logger.info("Successfully reformulated text using Cortex API. Response: %s", response_content)
         return response_content
     else:
         logger.error("Failed to reformulate text using Cortex API. Empty or erroneous response.")
