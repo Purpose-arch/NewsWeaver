@@ -1,12 +1,12 @@
 import os
 import re
-import aiohttp
+from openai import AsyncOpenAI
 import src.core.config as config
 from src.core.logger import logger
 import json
 
 # Constants for Cortex API
-CORTEX_API_URL = "https://cortex-api.vercel.app/v1/chat/completions"
+CORTEX_API_URL = "https://cortex-api.vercel.app/v1"
 CORTEX_MODEL = "claude-sonnet-4" # Assuming Claude Sonnet is the model to use
 
 # Get API key from environment variable
@@ -14,6 +14,12 @@ CORTEX_API_KEY = os.getenv("CORTEX_API_KEY")
 
 if not CORTEX_API_KEY:
     logger.error("CORTEX_API_KEY environment variable not set. Cortex API functions will not work.")
+
+# Initialize OpenAI client
+client = AsyncOpenAI(
+    api_key=CORTEX_API_KEY,
+    base_url=CORTEX_API_URL,
+)
 
 # Системный промпт для переформулирования новости
 default_prompt = """
@@ -244,15 +250,6 @@ content_check_prompt_cortex = """
 </quality_assurance>
 """
 
-async def _get_cortex_headers(api_key: str) -> dict:
-    """
-    Формирует заголовки для запроса к Cortex API.
-    """
-    return {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-
 async def _make_cortex_request(system_prompt: str, user_content: str, temperature: float = 0.7) -> str | None:
     """
     Отправляет запрос к Cortex API и возвращает ответ.
@@ -261,71 +258,42 @@ async def _make_cortex_request(system_prompt: str, user_content: str, temperatur
         logger.error("CORTEX_API_KEY is not set. Cannot make API request.")
         return None
 
-    headers = await _get_cortex_headers(CORTEX_API_KEY)
-    payload = {
-        "assistant": {
-            "name": "Claude",
-            "instructions": system_prompt,
-            "temperature": temperature,
-            "model": CORTEX_MODEL,
-            "capabilities": {}
-        },
-        "messages": [
-            {
-                "role": "user",
-                "content": user_content,
-            }
-        ]
-    }
+    try:
+        response = await client.chat.completions.create(
+            model=CORTEX_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=temperature,
+        )
 
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.post(CORTEX_API_URL, json=payload, headers=headers) as response:
-                response.raise_for_status()
-                result = await response.json()
-                logger.debug(f"Raw Cortex API response: {json.dumps(result, ensure_ascii=False, indent=2)}")
-                if result and isinstance(result, dict) and "result" in result and result["result"]:
-                    for item in result["result"]:
-                        if "content" in item:
-                            raw_content = item["content"]
-                            cleaned_content = None
-                            if isinstance(raw_content, str):
-                                temp_content = re.sub(r"<anon>thinking>.*?<\/anon>thinking>", "", raw_content, flags=re.DOTALL)
-                                cleaned_content = re.sub(r"<[^>]*?(?:thinking|anon)[^>]*?>.*?<\/[^>]*?(?:thinking|anon)[^>]*?>", "", temp_content, flags=re.DOTALL).strip()
-                                # Added logic to handle plain 'thinking>' marker
-                                if 'thinking>' in cleaned_content:
-                                    parts = cleaned_content.split('thinking>', 1)
-                                    if len(parts) > 1:
-                                        cleaned_content = parts[1].strip()
-                                    else:
-                                        logger.warning("Found 'thinking>' in string content but split did not yield two parts. Original content may be malformed.")
-                            elif isinstance(raw_content, list):
-                                for content_item in raw_content:
-                                    if content_item.get("type") == "text" and content_item.get("text"):
-                                        temp_content = re.sub(r"<anon>thinking>.*?<\/anon>thinking>", "", content_item["text"], flags=re.DOTALL)
-                                        cleaned_content = re.sub(r"<[^>]*?(?:thinking|anon)[^>]*?>.*?<\/[^>]*?(?:thinking|anon)[^>]*?>", "", temp_content, flags=re.DOTALL).strip()
-                                        # Added logic to handle plain 'thinking>' marker in list item
-                                        if 'thinking>' in cleaned_content:
-                                            parts = cleaned_content.split('thinking>', 1)
-                                            if len(parts) > 1:
-                                                cleaned_content = parts[1].strip()
-                                            else:
-                                                logger.warning("Found 'thinking>' in list item but split did not yield two parts. Original content may be malformed.")
-                                        break
-                            if cleaned_content:
-                                logger.debug(f"Cleaned Cortex API response content: {cleaned_content}")
-                                return cleaned_content
-                logger.warning(f"Unexpected response structure from Cortex API: {result}")
-                return None
-        except aiohttp.ClientError as e:
-            logger.error(f"Client error during Cortex API request: {e}")
+        if response.choices and response.choices[0].message.content:
+            raw_content = response.choices[0].message.content
+            cleaned_content = None
+            if isinstance(raw_content, str):
+                temp_content = re.sub(r"<anon>thinking>.*?<\/anon>thinking>", "", raw_content, flags=re.DOTALL)
+                cleaned_content = re.sub(r"<[^>]*?(?:thinking|anon)[^>]*?>.*?<\/[^>]*?(?:thinking|anon)[^>]*?>", "", temp_content, flags=re.DOTALL).strip()
+
+                # Added logic to handle plain 'thinking>' marker
+                if 'thinking>' in cleaned_content:
+                    parts = cleaned_content.split('thinking>', 1)
+                    if len(parts) > 1:
+                        cleaned_content = parts[1].strip()
+                    else:
+                        logger.warning("Found 'thinking>' in string content but split did not yield two parts. Original content may be malformed.")
+
+            if cleaned_content:
+                logger.debug(f"Cleaned Cortex API response content: {cleaned_content}")
+                return cleaned_content
+            logger.warning(f"Unexpected response structure or empty content from Cortex API: {raw_content}")
             return None
-        except json.JSONDecodeError:
-            logger.error("Failed to decode JSON response from Cortex API.")
+        else:
+            logger.warning("Empty or unexpected response from Cortex API.")
             return None
-        except Exception as e:
-            logger.error(f"An unexpected error occurred during Cortex API request: {e}")
-            return None
+    except Exception as e:
+        logger.error(f"Error during Cortex API request: {e}")
+        return None
 
 async def reformulate_text(text: str) -> str:
     """
