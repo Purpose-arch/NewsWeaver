@@ -12,12 +12,12 @@ import src.utils.media as media
 import src.integrations.requesty as requesty
 # DEPRECATED: import google_ai
 # DEPRECATED: import src.integrations.voidapi_ai as voidapi_ai
-import src.integrations.langdockapi as langdockapi
+import src.integrations.cortexapi as cortexapi
 import requests
 from typing import Optional, Union, List
 from src.core.logger import logger
 import src.features.direct_news as direct_news
-import src.utils.langdock_key_gen as langdock_key_gen # Импортируем для доступа к ключам
+# DEPRECATED: import src.utils.langdock_key_gen as langdock_key_gen
 
 # Создаем временную директорию для хранения медиафайлов на время модерации
 TEMP_MEDIA_DIR = os.path.join(tempfile.gettempdir(), "newsbot_media")
@@ -176,7 +176,7 @@ async def regenerate_with_custom_prompt(entry, custom_prompt, replied_msg_id):
         # Получаем текущий текст новости и применяем кастомный промпт
         original_text = entry["text"]
         # DEPRECATED: new_text = await voidapi_ai.modify_text_with_custom_prompt(original_text, custom_prompt)
-        new_text = await langdockapi.modify_text_with_custom_prompt(original_text, custom_prompt)
+        new_text = await cortexapi.modify_text_with_custom_prompt(original_text, custom_prompt)
         
         if not new_text:
             logger.error("Failed to regenerate text with custom prompt")

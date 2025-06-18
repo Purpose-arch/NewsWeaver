@@ -3,7 +3,7 @@ import asyncio
 # DEPRECATED: import google.generativeai as genai
 import src.core.config as config
 from src.core.logger import logger
-from src.integrations.langdockapi import check_content_with_langdock
+from src.integrations.cortexapi import check_content_with_cortex
 
 # Промпт для проверки содержимого новости
 # DEPRECATED: content_check_prompt = """
@@ -13,7 +13,7 @@ from src.integrations.langdockapi import check_content_with_langdock
 # DEPRECATED: 2. Сообщение о ракетной опасности/опасности БПЛа или отбой таких опасностей
 # DEPRECATED: 
 # DEPRECATED: Правила:
-# DEPRECATED: - Если сообщение полностью является коммерческой рекламой ИЛИ содержит информацию о ракетной опасности/опасности БПЛа/отбое опасности - ответь только "YES"
+# DEPRECATED: - Если сообщение полностью является коммерческой рекламой ИЛИ содержит информацию о ракетной опасности/опасности БПЛа/отбоя опасности - ответь только "YES"
 # DEPRECATED: - Во всех остальных случаях - ответь только "NO"
 # DEPRECATED: 
 # DEPRECATED: Определения:
@@ -35,8 +35,8 @@ async def check_content(text: str) -> bool:
               False если сообщение подходит для переформулировки
     """
     try:
-        return await check_content_with_langdock(text)
+        return await check_content_with_cortex(text)
     except Exception as e:
-        logger.critical(f"Critical error during content check with Langdock API: {e}. Defaulting to not filtered.")
+        logger.critical(f"Critical error during content check with Cortex API: {e}. Defaulting to not filtered.")
         # В случае критической ошибки пропускаем сообщение (не фильтруем его)
         return False 
