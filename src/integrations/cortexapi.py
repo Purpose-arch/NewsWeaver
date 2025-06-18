@@ -3,6 +3,7 @@ import re
 from openai import AsyncOpenAI
 import src.core.config as config
 from src.core.logger import logger
+import json
 
 # Constants for Cortex API
 CORTEX_API_URL = "https://cortex-api.vercel.app/v1"
@@ -266,11 +267,26 @@ async def _make_cortex_request(system_prompt: str, user_content: str, temperatur
             ],
             temperature=temperature,
         )
-        # Assuming the response structure is similar to OpenAI's chat completions
+        
+        # Assuming the response.choices[0].message.content holds the JSON string
         if response.choices and response.choices[0].message.content:
-            return response.choices[0].message.content
+            raw_content_str = response.choices[0].message.content
+            try:
+                parsed_content = json.loads(raw_content_str)
+                if "result" in parsed_content and parsed_content["result"]:
+                    first_result_item = parsed_content["result"][0]
+                    if "content" in first_result_item and isinstance(first_result_item["content"], list):
+                        # Get the text from the last content item
+                        last_content_item = first_result_item["content"][-1]
+                        if "text" in last_content_item:
+                            return last_content_item["text"]
+                logger.warning(f"Unexpected parsed content structure from Cortex API: {parsed_content}")
+                return None
+            except json.JSONDecodeError:
+                logger.error(f"Failed to decode JSON from Cortex API response content: {raw_content_str[:200]}...")
+                return None
         else:
-            logger.warning("Unexpected response structure from Cortex API.")
+            logger.warning("Empty or unexpected response from Cortex API.")
             return None
     except Exception as e:
         logger.error(f"Error during Cortex API request: {e}")
