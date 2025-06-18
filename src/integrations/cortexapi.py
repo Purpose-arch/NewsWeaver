@@ -276,7 +276,6 @@ async def _make_cortex_request(system_prompt: str, user_content: str, temperatur
                 if "result" in parsed_content and parsed_content["result"]:
                     first_result_item = parsed_content["result"][0]
                     if "content" in first_result_item and isinstance(first_result_item["content"], list):
-                        # Get the text from the last content item
                         last_content_item = first_result_item["content"][-1]
                         if "text" in last_content_item:
                             return last_content_item["text"]
