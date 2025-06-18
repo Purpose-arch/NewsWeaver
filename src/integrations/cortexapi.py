@@ -6,7 +6,7 @@ from src.core.logger import logger
 
 # Constants for Cortex API
 CORTEX_API_URL = "https://cortex-api.vercel.app/v1/chat/completions"
-CORTEX_MODEL = "claude-4-sonnet" # Assuming Claude Sonnet is the model to use
+CORTEX_MODEL = "claude-sonnet-4" # Assuming Claude Sonnet is the model to use
 
 # Get API key from environment variable
 CORTEX_API_KEY = os.getenv("CORTEX_API_KEY")
