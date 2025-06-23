@@ -4,7 +4,7 @@ import src.core.config as config
 import src.integrations.requesty as requesty
 # DEPRECATED: import google_ai
 # DEPRECATED: import src.integrations.voidapi_ai as voidapi_ai
-import src.integrations.cortexapi as cortexapi
+import src.integrations.langdockapi as langdockapi
 import src.features.moderation as moderation
 import src.core.clients as clients
 from src.core.logger import logger
@@ -33,10 +33,10 @@ async def _process_message(client, message):
         logger.error(f"Content filter check failed for {channel_id}:{message_id}: {e}")
         # Если проверка не удалась, продолжаем обработку (не фильтруем)
 
-    # Reformulate text via Cortex API
+    # Reformulate text via Langdock API
     try:
         # DEPRECATED: reformulated = await voidapi_ai.reformulate_text(text)
-        reformulated = await cortexapi.reformulate_text(text)
+        reformulated = await langdockapi.reformulate_text(text)
     except Exception as e:
         logger.error(f"Reformulation failed for {channel_id}:{message_id}: {e}")
         return

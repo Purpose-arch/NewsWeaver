@@ -11,7 +11,7 @@ import src.features.publisher as publisher
 import src.features.direct_news as direct_news
 import src.features.alarm as alarm  # Импортируем модуль alarm
 from src.core.clients import start_clients, close_clients, loop
-# DEPRECATED: import src.utils.langdock_key_gen as langdock_key_gen
+import src.utils.langdock_key_gen as langdock_key_gen # Импортируем генератор ключей Langdock
 
 async def on_shutdown():
     """
@@ -40,7 +40,8 @@ async def main():
         # Запускаем парсер тревог
         await alarm.start_alarm_bot()
         
-        # DEPRECATED: asyncio.create_task(langdock_key_gen.main_langdock_generator())
+        # Запускаем генератор ключей Langdock в фоновом режиме
+        asyncio.create_task(langdock_key_gen.main_langdock_generator())
         
         # DEPRECATED: asyncio.create_task(db.schedule_cleanup(1))  # Удалено автоудаление новостей
         
