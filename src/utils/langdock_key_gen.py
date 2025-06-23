@@ -15,6 +15,7 @@ import re
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 LANGDOCK_API_KEYS_FILE = "active_langdock_api_keys.json" # Путь к файлу с активными ключами Langdock
+TARGET_KEY_COUNT = 5 # Целевое количество активных ключей
 
 # Асинхронное событие для управления генерацией ключей
 _key_generation_enabled_event = asyncio.Event()
@@ -47,12 +48,12 @@ async def read_langdock_api_keys() -> list[str]:
 async def write_langdock_api_keys(keys: list[str]):
     """
     Asynchronously writes active Langdock API keys to the JSON file.
-    Ensures only up to two keys are stored.
+    Ensures only up to TARGET_KEY_COUNT keys are stored.
     """
     file_path = os.path.join(os.path.dirname(__file__), LANGDOCK_API_KEYS_FILE)
     try:
-        # Take only the first two keys
-        keys_to_write = keys[:2]
+        # Take only the first TARGET_KEY_COUNT keys
+        keys_to_write = keys[:TARGET_KEY_COUNT]
         f = await asyncio.to_thread(open, file_path, 'w', encoding='utf-8')
         with f:
             json.dump(keys_to_write, f, indent=4)
@@ -79,62 +80,78 @@ async def get_csrf(session: aiohttp.ClientSession, headers: dict) -> str:
 async def generate_langdock_api_key():
     """
     Generates a new Langdock API key.
+    Includes retry logic for robustness.
     """
-    mail_obj, check_messages = dropmail(wait=False)
-    head = Headers()
-    headers = head.generate()
-    async with aiohttp.ClientSession(headers=headers) as session:
-        csrf = await get_csrf(session, headers)
-        payload_auth = {
-            "0": {
-                "json": {
-                    "email": mail_obj,
-                    "preferMagicLink": False,
-                    "marketingFields": None
-                },
-                "meta": {"values": {"marketingFields": ["undefined"]}}
-            }
-        }
-        await session.post("https://app.langdock.com/api/trpc/auth.getAuthProvider?batch=1", json=payload_auth)
-        
-        email_code_pattern = r"[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}"
-        code = None
-        for _ in range(60):
-            msgs = check_messages()
-            for msg in msgs:
-                match = re.search(email_code_pattern, msg['text'])
-                if match:
-                    code = match.group()
-                    break
-            if code:
-                break
-            await asyncio.sleep(2)
-        
-        await session.get(f"https://app.langdock.com/api/auth/code/callback?code={code}&email={mail_obj}&csrf={csrf}")
+    MAX_RETRIES = 3
+    RETRY_DELAY = 5 # seconds
 
-        workspace_name = str(uuid.uuid4())
-        workspace_phone = get_random_phone()
-        payload_ws = {
-            "0": {
-                "json": {
-                    "name": workspace_name,
-                    "companySize": "1-100",
-                    "companyCountry": "RU",
-                    "jobTitle": str(uuid.uuid4()),
-                    "phoneNumber": workspace_phone,
-                    "marketingFields": None
-                },
-                "meta": {"values": {"marketingFields": ["undefined"]}}
-            }
-        }
-        await session.post("https://app.langdock.com/api/trpc/workspace.createOwnWorkspace?batch=1", json=payload_ws)
+    for attempt in range(MAX_RETRIES):
+        try:
+            mail_obj, check_messages = dropmail(wait=False)
+            head = Headers()
+            headers = head.generate()
+            async with aiohttp.ClientSession(headers=headers) as session:
+                csrf = await get_csrf(session, headers)
+                payload_auth = {
+                    "0": {
+                        "json": {
+                            "email": mail_obj,
+                            "preferMagicLink": False,
+                            "marketingFields": None
+                        },
+                        "meta": {"values": {"marketingFields": ["undefined"]}}
+                    }
+                }
+                await session.post("https://app.langdock.com/api/trpc/auth.getAuthProvider?batch=1", json=payload_auth)
+                
+                email_code_pattern = r"[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}"
+                code = None
+                for _ in range(60): # Max 120 seconds wait for email
+                    msgs = check_messages()
+                    for msg in msgs:
+                        match = re.search(email_code_pattern, msg['text'])
+                        if match:
+                            code = match.group()
+                            break
+                    if code:
+                        break
+                    await asyncio.sleep(2)
+                
+                if not code:
+                    raise Exception("Timed out waiting for email code.")
 
-        payload_key = {"0": {"json": {"name": "", "expiry": "never"}}}
-        resp = await session.post("https://app.langdock.com/api/trpc/apiKeys.createApiKey?batch=1", json=payload_key)
-        data_key = await resp.text()
-        key_json = json.loads(data_key)
-        api_key = key_json[0]["result"]["data"]["json"]["key"]
-    return api_key
+                await session.get(f"https://app.langdock.com/api/auth/code/callback?code={code}&email={mail_obj}&csrf={csrf}")
+
+                workspace_name = str(uuid.uuid4())
+                workspace_phone = get_random_phone()
+                payload_ws = {
+                    "0": {
+                        "json": {
+                            "name": workspace_name,
+                            "companySize": "1-100",
+                            "companyCountry": "RU",
+                            "jobTitle": str(uuid.uuid4()),
+                            "phoneNumber": workspace_phone,
+                            "marketingFields": None
+                        },
+                        "meta": {"values": {"marketingFields": ["undefined"]}}
+                    }
+                }
+                await session.post("https://app.langdock.com/api/trpc/workspace.createOwnWorkspace?batch=1", json=payload_ws)
+
+                payload_key = {"0": {"json": {"name": "", "expiry": "never"}}}
+                resp = await session.post("https://app.langdock.com/api/trpc/apiKeys.createApiKey?batch=1", json=payload_key)
+                data_key = await resp.text()
+                key_json = json.loads(data_key)
+                api_key = key_json[0]["result"]["data"]["json"]["key"]
+            logging.info(f"Successfully generated new Langdock API key on attempt {attempt + 1}.")
+            return api_key
+        except Exception as e:
+            logging.warning(f"Attempt {attempt + 1} to generate Langdock API key failed: {e}")
+            if attempt < MAX_RETRIES - 1:
+                await asyncio.sleep(RETRY_DELAY)
+    logging.error(f"Failed to generate Langdock API key after {MAX_RETRIES} attempts.")
+    return None
 
 async def invalidate_and_generate_new_key(failed_key: str):
     """
@@ -146,9 +163,36 @@ async def invalidate_and_generate_new_key(failed_key: str):
     await write_langdock_api_keys(updated_keys)
     _key_generation_enabled_event.set() # Ensure generator is active to create a new key
 
+async def ensure_initial_keys_generated(target_count: int = TARGET_KEY_COUNT):
+    """
+    Ensures that a minimum number of Langdock API keys are generated before proceeding.
+    This function blocks until TARGET_KEY_COUNT keys are present.
+    """
+    logging.info(f"Ensuring at least {target_count} Langdock API keys are present...")
+    while True:
+        api_keys = await read_langdock_api_keys()
+        num_active_keys = len(api_keys)
+        if num_active_keys >= target_count:
+            logging.info(f"Successfully ensured {num_active_keys} Langdock API keys are present.")
+            break
+        
+        logging.info(f"Only {num_active_keys}/{target_count} keys found. Generating new key...")
+        new_key = await generate_langdock_api_key()
+        if new_key and new_key not in api_keys:
+            api_keys.append(new_key)
+            await write_langdock_api_keys(api_keys)
+            logging.info(f"Generated and saved new Langdock API key: {new_key[:4]}***")
+        elif new_key and new_key in api_keys:
+            logging.info(f"Generated key {new_key[:4]}*** already exists. Skipping save.")
+        else:
+            logging.warning("Langdock API key generation failed. Retrying...")
+        
+        await asyncio.sleep(5) # Small delay before re-checking and generating
+
 async def main_langdock_generator():
     """
-    Main function to continuously maintain exactly two active Langdock API keys.
+    Main function to continuously maintain exactly TARGET_KEY_COUNT active Langdock API keys.
+    This runs as a background task after initial key generation.
     """
     while True:
         await _key_generation_enabled_event.wait()
@@ -157,20 +201,19 @@ async def main_langdock_generator():
         num_active_keys = len(api_keys)
         logging.info(f"Currently {num_active_keys} active Langdock API keys.")
 
-        if num_active_keys < 2:
-            logging.info(f"Fewer than 2 active keys ({num_active_keys} found). Generating a new one...")
+        if num_active_keys < TARGET_KEY_COUNT:
+            logging.info(f"Fewer than {TARGET_KEY_COUNT} active keys ({num_active_keys} found). Generating a new one...")
             new_key = await generate_langdock_api_key()
             if new_key and new_key not in api_keys:
                 api_keys.append(new_key)
                 await write_langdock_api_keys(api_keys)
-                logging.info(f"Generated and saved new Langdock API key: {new_key}")
+                logging.info(f"Generated and saved new Langdock API key: {new_key[:4]}***")
             elif new_key and new_key in api_keys:
-                logging.info(f"Generated key {new_key} already exists. Skipping save.")
+                logging.info(f"Generated key {new_key[:4]}*** already exists. Skipping save.")
             else:
                 logging.warning("Langdock API key generation failed.")
         else:
-            logging.info("Two active Langdock API keys are present. Waiting for a key to be invalidated.")
-            # If 2 keys exist, we can pause generation until one is marked as failed
+            logging.info(f"{TARGET_KEY_COUNT} active Langdock API keys are present. Waiting for a key to be invalidated.")
             _key_generation_enabled_event.clear() # Pause generation until a key is invalidated
 
         await asyncio.sleep(5) # Check every 5 seconds

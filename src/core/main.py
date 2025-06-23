@@ -28,6 +28,9 @@ async def main():
     try:
         logger.info("Запуск сервиса...")
         
+        # Убеждаемся, что 5 ключей Langdock API сгенерированы до запуска основных компонентов
+        await langdock_key_gen.ensure_initial_keys_generated()
+        
         # Запускаем все клиенты
         await start_clients()
         
@@ -40,7 +43,7 @@ async def main():
         # Запускаем парсер тревог
         await alarm.start_alarm_bot()
         
-        # Запускаем генератор ключей Langdock в фоновом режиме
+        # Запускаем генератор ключей Langdock в фоновом режиме для поддержания их количества
         asyncio.create_task(langdock_key_gen.main_langdock_generator())
         
         # DEPRECATED: asyncio.create_task(db.schedule_cleanup(1))  # Удалено автоудаление новостей
