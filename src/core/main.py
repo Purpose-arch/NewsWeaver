@@ -3,7 +3,7 @@ import asyncio
 import signal
 import sys
 import os # Импортируем модуль os для доступа к переменным окружения
-from aiohttp import web # Импортируем веб-модуль aiohttp
+from aiohttp import web, ClientSession # Импортируем веб-модуль aiohttp и ClientSession
 from src.core.logger import logger
 import src.core.clients as clients
 import src.integrations.parser as parser
@@ -22,6 +22,33 @@ async def on_shutdown():
     logger.info("Завершение работы сервиса...")
     await close_clients()
     logger.info("Сервис остановлен")
+
+async def send_keep_alive_request(url):
+    """
+    Отправляет GET-запрос для поддержания активности контейнера.
+    """
+    try:
+        async with ClientSession() as session:
+            async with session.get(f"{url}/health") as response:
+                if response.status == 200:
+                    logger.info("Запрос keep-alive успешно отправлен.")
+                else:
+                    logger.warning(f"Запрос keep-alive вернул статус {response.status}")
+    except Exception as e:
+        logger.error(f"Ошибка при отправке запроса keep-alive: {e}", exc_info=True)
+
+async def periodic_keep_alive(interval_minutes=10):
+    """
+    Периодически отправляет запрос keep-alive.
+    """
+    web_app_url = os.environ.get("WEB_APP_URL")
+    if not web_app_url:
+        logger.warning("Переменная окружения WEB_APP_URL не установлена. Отключение keep-alive.")
+        return
+
+    while True:
+        await asyncio.sleep(interval_minutes * 60) # Ждем указанное количество минут
+        await send_keep_alive_request(web_app_url)
 
 async def health_check(request):
     """
@@ -53,6 +80,9 @@ async def main():
         
         # Запускаем HTTP-сервер в фоновом режиме
         web_server_runner = await start_web_server()
+
+        # Запускаем фоновую задачу для поддержания активности контейнера
+        asyncio.create_task(periodic_keep_alive(10))
 
         # Убеждаемся, что 5 ключей Langdock API сгенерированы до запуска основных компонентов
         await langdock_key_gen.ensure_initial_keys_generated()
