@@ -10,4 +10,5 @@ if not logger.handlers:
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
     handler.setFormatter(formatter)
     logger.setLevel(logging.INFO)
+    logger.propagate = False # Отключаем распространение логов
     logger.addHandler(handler)
