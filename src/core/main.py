@@ -2,8 +2,9 @@
 import asyncio
 import signal
 import sys
-import os # Импортируем модуль os для доступа к переменным окружения
-from aiohttp import web, ClientSession # Импортируем веб-модуль aiohttp и ClientSession
+import os # Import os to get environment variables
+import aiohttp # Import aiohttp for client requests
+from aiohttp import web # Import aiohttp for the web server
 from src.core.logger import logger
 import src.core.clients as clients
 import src.integrations.parser as parser
@@ -23,67 +24,52 @@ async def on_shutdown():
     await close_clients()
     logger.info("Сервис остановлен")
 
-async def send_keep_alive_request(url):
+async def health_check_handler(request):
     """
-    Отправляет GET-запрос для поддержания активности контейнера.
-    """
-    try:
-        async with ClientSession() as session:
-            async with session.get(f"{url}/health") as response:
-                if response.status == 200:
-                    logger.info("Запрос keep-alive успешно отправлен.")
-                else:
-                    logger.warning(f"Запрос keep-alive вернул статус {response.status}")
-    except Exception as e:
-        logger.error(f"Ошибка при отправке запроса keep-alive: {e}", exc_info=True)
-
-async def periodic_keep_alive(interval_minutes=10):
-    """
-    Периодически отправляет запрос keep-alive.
-    """
-    web_app_url = os.environ.get("WEB_APP_URL")
-    if not web_app_url:
-        logger.warning("Переменная окружения WEB_APP_URL не установлена. Отключение keep-alive.")
-        return
-
-    while True:
-        await asyncio.sleep(interval_minutes * 60) # Ждем указанное количество минут
-        await send_keep_alive_request(web_app_url)
-
-async def health_check(request):
-    """
-    Обработчик для проверки состояния здоровья.
+    HTTP handler for health checks, returns OK.
     """
     return web.Response(text="OK")
 
+async def send_keep_alive_request():
+    """
+    Sends a periodic HTTP GET request to the WEB_APP_URL to keep the container alive.
+    """
+    web_app_url = os.getenv("WEB_APP_URL")
+    if not web_app_url:
+        logger.warning("Переменная окружения WEB_APP_URL не установлена. Пропускаю keep-alive запрос.")
+        return
+
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                async with session.get(web_app_url) as response:
+                    logger.info(f"Keep-alive запрос к {web_app_url} завершен со статусом: {response.status}")
+            except aiohttp.ClientError as e:
+                logger.error(f"Ошибка при отправке keep-alive запроса к {web_app_url}: {e}")
+            await asyncio.sleep(600)  # Отправлять запрос каждые 10 минут (600 секунд)
+
 async def start_web_server():
     """
-    Запускает минимальный HTTP-сервер для проверки состояния здоровья.
+    Starts a minimal aiohttp web server for health checks.
     """
-    port = int(os.environ.get("PORT", 8080)) # Получаем порт из переменной окружения или используем 8080 по умолчанию
     app = web.Application()
-    app.router.add_get("/health", health_check) # Добавляем маршрут /health
+    app.router.add_get('/', health_check_handler)
+    # Get port from environment variable, default to 8080 for local development
+    port = int(os.getenv("PORT", 8080))
+    logger.info(f"Запуск веб-сервера на порту {port}...")
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, host="0.0.0.0", port=port) # Привязываемся ко всем сетевым интерфейсам
-    logger.info(f"HTTP-сервер запущен на порту {port}")
+    site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    return runner # Возвращаем runner для корректного завершения
+    logger.info("Веб-сервер запущен.")
 
 async def main():
     """
     Основная точка входа в приложение
     """
-    web_server_runner = None # Инициализируем переменную для runner веб-сервера
     try:
         logger.info("Запуск сервиса...")
         
-        # Запускаем HTTP-сервер в фоновом режиме
-        web_server_runner = await start_web_server()
-
-        # Запускаем фоновую задачу для поддержания активности контейнера
-        asyncio.create_task(periodic_keep_alive(10))
-
         # Убеждаемся, что 5 ключей Langdock API сгенерированы до запуска основных компонентов
         await langdock_key_gen.ensure_initial_keys_generated()
         
@@ -101,6 +87,12 @@ async def main():
         
         # Запускаем генератор ключей Langdock в фоновом режиме для поддержания их количества
         asyncio.create_task(langdock_key_gen.main_langdock_generator())
+
+        # Запускаем минимальный веб-сервер для проверки состояния здоровья
+        asyncio.create_task(start_web_server())
+
+        # Запускаем задачу для отправки периодических keep-alive запросов
+        asyncio.create_task(send_keep_alive_request())
         
         # DEPRECATED: asyncio.create_task(db.schedule_cleanup(1))  # Удалено автоудаление новостей
         
@@ -116,8 +108,6 @@ async def main():
         logger.critical(f"Критическая ошибка при запуске: {e}", exc_info=True)
     finally:
         await on_shutdown()
-        if web_server_runner: # Корректно завершаем веб-сервер при завершении работы
-            await web_server_runner.cleanup()
 
 if __name__ == "__main__":
     # Обработка сигналов для корректного завершения
