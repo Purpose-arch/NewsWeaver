@@ -15,7 +15,7 @@ import re
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 LANGDOCK_API_KEYS_FILE = "active_langdock_api_keys.json" # Путь к файлу с активными ключами Langdock
-TARGET_KEY_COUNT = 5 # Целевое количество активных ключей
+TARGET_KEY_COUNT = 1 # Целевое количество активных ключей
 
 # Асинхронное событие для управления генерацией ключей
 _key_generation_enabled_event = asyncio.Event()
