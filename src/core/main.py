@@ -39,6 +39,9 @@ async def send_keep_alive_request():
         logger.warning("Переменная окружения WEB_APP_URL не установлена. Пропускаю keep-alive запрос.")
         return
 
+    logger.info("Ожидание 30 секунд перед первым keep-alive запросом...")
+    await asyncio.sleep(30) # Добавляем задержку перед первым запросом
+
     async with aiohttp.ClientSession() as session:
         while True:
             try:
