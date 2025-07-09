@@ -2,6 +2,8 @@
 import asyncio
 import signal
 import sys
+import os # Импортируем модуль os для доступа к переменным окружения
+from aiohttp import web # Импортируем веб-модуль aiohttp
 from src.core.logger import logger
 import src.core.clients as clients
 import src.integrations.parser as parser
@@ -21,13 +23,37 @@ async def on_shutdown():
     await close_clients()
     logger.info("Сервис остановлен")
 
+async def health_check(request):
+    """
+    Обработчик для проверки состояния здоровья.
+    """
+    return web.Response(text="OK")
+
+async def start_web_server():
+    """
+    Запускает минимальный HTTP-сервер для проверки состояния здоровья.
+    """
+    port = int(os.environ.get("PORT", 8080)) # Получаем порт из переменной окружения или используем 8080 по умолчанию
+    app = web.Application()
+    app.router.add_get("/health", health_check) # Добавляем маршрут /health
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="0.0.0.0", port=port) # Привязываемся ко всем сетевым интерфейсам
+    logger.info(f"HTTP-сервер запущен на порту {port}")
+    await site.start()
+    return runner # Возвращаем runner для корректного завершения
+
 async def main():
     """
     Основная точка входа в приложение
     """
+    web_server_runner = None # Инициализируем переменную для runner веб-сервера
     try:
         logger.info("Запуск сервиса...")
         
+        # Запускаем HTTP-сервер в фоновом режиме
+        web_server_runner = await start_web_server()
+
         # Убеждаемся, что 5 ключей Langdock API сгенерированы до запуска основных компонентов
         await langdock_key_gen.ensure_initial_keys_generated()
         
@@ -60,6 +86,8 @@ async def main():
         logger.critical(f"Критическая ошибка при запуске: {e}", exc_info=True)
     finally:
         await on_shutdown()
+        if web_server_runner: # Корректно завершаем веб-сервер при завершении работы
+            await web_server_runner.cleanup()
 
 if __name__ == "__main__":
     # Обработка сигналов для корректного завершения
