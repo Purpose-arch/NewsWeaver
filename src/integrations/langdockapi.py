@@ -260,7 +260,7 @@ async def _load_langdock_api_keys() -> list[str]:
 
         f = await asyncio.to_thread(open, file_to_read, 'r', encoding='utf-8')
         with f:
-            data = json.load(f)
+            data = await asyncio.to_thread(json.load, f)
             # Expected format is a list of strings
             if isinstance(data, list) and all(isinstance(key, str) for key in data):
                 keys = data

@@ -31,7 +31,7 @@ async def read_langdock_api_keys() -> list[str]:
     try:
         f = await asyncio.to_thread(open, file_path, 'r', encoding='utf-8')
         with f:
-            data = json.load(f)
+            data = await asyncio.to_thread(json.load, f)
             # Ensure it's a list of strings
             if isinstance(data, list) and all(isinstance(key, str) for key in data):
                 return data
@@ -56,7 +56,7 @@ async def write_langdock_api_keys(keys: list[str]):
         keys_to_write = keys[:TARGET_KEY_COUNT]
         f = await asyncio.to_thread(open, file_path, 'w', encoding='utf-8')
         with f:
-            json.dump(keys_to_write, f, indent=4)
+            await asyncio.to_thread(json.dump, keys_to_write, f, indent=4)
         logging.info(f"Successfully saved {len(keys_to_write)} Langdock API keys to {file_path}")
     except Exception as e:
         logging.error(f"Error writing Langdock API keys to file: {e}")
@@ -107,7 +107,7 @@ async def generate_langdock_api_key():
                 email_code_pattern = r"[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}"
                 code = None
                 for _ in range(60): # Max 120 seconds wait for email
-                    msgs = check_messages()
+                    msgs = await asyncio.to_thread(check_messages)
                     for msg in msgs:
                         match = re.search(email_code_pattern, msg['text'])
                         if match:
