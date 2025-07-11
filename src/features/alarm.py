@@ -146,48 +146,6 @@ async def handle_new_message(event: events.NewMessage.Event):
     else:
         logger.info(f"New message {message.id} does not contain target phrases. Skipping.")
 
-async def handle_edited_message(event: events.MessageEdited.Event):
-    """Обрабатывает только отредактированные сообщения, релевантные последним алертам."""
-    global last_alert_message_id, last_uav_alert_message_id
-    message: Message = event.message
-    
-    if not should_process_event(event):
-        return
-        
-    if not hasattr(message, 'text') or not message.text:
-         logger.debug(f"Edited message {message.id} now has no text, skipping.")
-         return
-    
-    text_lower = message.text.lower()
-    target_chat = config.TARGET_ID # Используем общий TARGET_ID для публикации
-    message_id = message.id
-      # Проверяем наличие целевой локации
-    has_target_location = "курская область" in text_lower or "фатежский район" in text_lower
-
-    # Обработка редактирования сообщения о ракетной опасности
-    if last_alert_message_id is not None and message_id == last_alert_message_id:
-        logger.info(f"Processing edit for tracked missile alert message: ID={message_id}")
-        # Проверяем, появилось ли слово "отбой" в отредактированном сообщении ракетной опасности
-        if has_target_location and "отбой" in text_lower and "ракетн" in text_lower:
-            logger.info(f"Tracked missile alert message {message_id} was edited to include 'missile off' phrase for target location. Sending missile off message.")
-            await send_bot_message(target_chat, off_message, message_id)
-            last_alert_message_id = None # Сбрасываем ID
-        else:
-            logger.debug(f"Tracked missile alert message {message_id} was edited, but does not contain 'missile off' phrase now or not for target location. Skipping.")
-            
-    # Обработка редактирования сообщения о БПЛА опасности
-    elif last_uav_alert_message_id is not None and message_id == last_uav_alert_message_id:
-        logger.info(f"Processing edit for tracked UAV alert message: ID={message_id}")
-        # Проверяем, появилось ли слово "отбой" в отредактированном сообщении БПЛА опасности
-        if has_target_location and "отбой" in text_lower and "бпла" in text_lower:
-            logger.info(f"Tracked UAV alert message {message_id} was edited to include 'UAV off' phrase for target location. Sending UAV off message.")
-            await send_bot_message(target_chat, uav_off_message, message_id)
-            last_uav_alert_message_id = None # Сбрасываем ID
-        else:
-            logger.debug(f"Tracked UAV alert message {message_id} was edited, but does not contain 'UAV off' phrase now or not for target location. Skipping.")
-    else:
-        # Если это не одно из отслеживаемых сообщений, просто игнорируем
-        pass
 
 async def start_alarm_bot():
     """Запускает бот оповещений о ракетной и БПЛА опасности."""
@@ -221,7 +179,6 @@ async def start_alarm_bot():
         
         # Регистрируем раздельные обработчики
         alarm_client.add_event_handler(handle_new_message, events.NewMessage(chats=source_entity_id))
-        alarm_client.add_event_handler(handle_edited_message, events.MessageEdited(chats=source_entity_id))
         
         logger.info("Alarm bot started: monitoring alerts")
         logger.info(f"Listening for events in source channel: {config.SOURCE_CHANNEL_ID} (resolved ID: {source_entity_id})")

@@ -78,8 +78,20 @@ async def start_parser():
                 logger.error(f"Error processing message: {ex}")
         return handler
 
+    # Define a handler for both new and edited messages
+    async def unified_handler(event):
+        try:
+            await _process_message(clients.tg_client, event.message)
+        except Exception as ex:
+            logger.error(f"Error processing message: {ex}")
+
+    # Register handlers for both NewMessage and MessageEdited events
     clients.tg_client.add_event_handler(
-        _make_handler(clients.tg_client),
+        unified_handler,
         events.NewMessage(chats=config.SOURCE_IDS)
     )
-    logger.info("Parser is listening to new messages.") 
+    clients.tg_client.add_event_handler(
+        unified_handler,
+        events.MessageEdited(chats=config.SOURCE_IDS)
+    )
+    logger.info("Parser is listening to new and edited messages.")
