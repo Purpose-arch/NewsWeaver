@@ -247,35 +247,35 @@ async def _load_langdock_api_keys() -> list[str]:
     """
     Загружает активные API ключи Langdock из JSON файла.
     """
-    keys = []
-    try:
-        file_path_src_utils = os.path.join(os.path.dirname(__file__), "..", "utils", ACTIVE_LANGDOCK_API_KEYS_FILE)
-
-        if os.path.exists(file_path_src_utils):
-            file_to_read = file_path_src_utils
-        else:
-            logger.warning(f"Langdock API keys file not found at {file_path_src_utils}. Generating new keys.")
-            _key_generation_enabled_event.set() # Trigger generation if file is missing
+    def _load_sync(path: str) -> list[str]:
+        """Синхронный хелпер для атомарного чтения файла."""
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, list) and all(isinstance(key, str) for key in data):
+                    logger.info(f"Loaded {len(data)} Langdock API keys from {path}.")
+                    return data
+                else:
+                    logger.warning(f"Unexpected data format in {path}. Starting with an empty list of keys.")
+                    _key_generation_enabled_event.set()
+                    return []
+        except FileNotFoundError:
+            logger.warning(f"Langdock API keys file not found at {path}. Generating new keys.")
+            _key_generation_enabled_event.set()
+            return []
+        except json.JSONDecodeError:
+            logger.warning(f"Corrupt or empty JSON file: {path}. Returning empty list of keys and triggering generation.")
+            _key_generation_enabled_event.set()
             return []
 
-        f = await asyncio.to_thread(open, file_to_read, 'r', encoding='utf-8')
-        with f:
-            data = await asyncio.to_thread(json.load, f)
-            # Expected format is a list of strings
-            if isinstance(data, list) and all(isinstance(key, str) for key in data):
-                keys = data
-            else:
-                logger.warning(f"Unexpected data format in {file_to_read}. Starting with an empty list of keys.")
-                _key_generation_enabled_event.set() # Trigger generation if format is wrong
-                return []
-            
-            logger.info(f"Loaded {len(keys)} Langdock API keys from {file_to_read}.")
-    except json.JSONDecodeError:
-        logger.warning(f"Corrupt or empty JSON file: {ACTIVE_LANGDOCK_API_KEYS_FILE}. Returning empty list of keys and triggering generation.")
-        _key_generation_enabled_event.set() # Trigger generation if file is corrupt
+    file_path = os.path.join(os.path.dirname(__file__), "..", "utils", ACTIVE_LANGDOCK_API_KEYS_FILE)
+    
+    try:
+        keys = await asyncio.to_thread(_load_sync, file_path)
+        return keys
     except Exception as e:
         logger.error(f"Error loading Langdock API keys: {e}")
-    return keys
+        return []
 
 async def _get_langdock_headers(api_key: str) -> dict:
     """

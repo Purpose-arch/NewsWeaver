@@ -21,29 +21,41 @@ TARGET_KEY_COUNT = 3 # Целевое количество активных кл
 _key_generation_enabled_event = asyncio.Event()
 _key_generation_enabled_event.set() # По умолчанию генерация включена
 
+def _read_keys_sync(path: str) -> list[str]:
+    """Синхронный хелпер для атомарного чтения файла."""
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            if isinstance(data, list) and all(isinstance(key, str) for key in data):
+                return data
+            else:
+                logging.warning(f"Unexpected data format in {path}. Starting with an empty list.")
+                return []
+    except json.JSONDecodeError:
+        logging.warning(f"Corrupt or empty JSON file: {path}. Starting with an empty list.")
+        return []
+    except Exception as e:
+        logging.error(f"Error reading Langdock API keys file: {e}")
+        return []
+
+def _write_keys_sync(path: str, keys: list[str]):
+    """Синхронный хелпер для атомарной записи в файл."""
+    try:
+        keys_to_write = keys[:TARGET_KEY_COUNT]
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(keys_to_write, f, indent=4)
+        logging.info(f"Successfully saved {len(keys_to_write)} Langdock API keys to {path}")
+    except Exception as e:
+        logging.error(f"Error writing Langdock API keys to file: {e}")
+
 async def read_langdock_api_keys() -> list[str]:
     """
     Asynchronously reads active Langdock API keys from the JSON file.
     """
     file_path = os.path.join(os.path.dirname(__file__), LANGDOCK_API_KEYS_FILE)
-    if not os.path.exists(file_path):
-        return []
-    try:
-        f = await asyncio.to_thread(open, file_path, 'r', encoding='utf-8')
-        with f:
-            data = await asyncio.to_thread(json.load, f)
-            # Ensure it's a list of strings
-            if isinstance(data, list) and all(isinstance(key, str) for key in data):
-                return data
-            else:
-                logging.warning(f"Unexpected data format in {file_path}. Starting with an empty list.")
-                return []
-    except json.JSONDecodeError:
-        logging.warning(f"Corrupt or empty JSON file: {file_path}. Starting with an empty list.")
-        return []
-    except Exception as e:
-        logging.error(f"Error reading Langdock API keys file: {e}")
-        return []
+    return await asyncio.to_thread(_read_keys_sync, file_path)
 
 async def write_langdock_api_keys(keys: list[str]):
     """
@@ -51,15 +63,7 @@ async def write_langdock_api_keys(keys: list[str]):
     Ensures only up to TARGET_KEY_COUNT keys are stored.
     """
     file_path = os.path.join(os.path.dirname(__file__), LANGDOCK_API_KEYS_FILE)
-    try:
-        # Take only the first TARGET_KEY_COUNT keys
-        keys_to_write = keys[:TARGET_KEY_COUNT]
-        f = await asyncio.to_thread(open, file_path, 'w', encoding='utf-8')
-        with f:
-            await asyncio.to_thread(json.dump, keys_to_write, f, indent=4)
-        logging.info(f"Successfully saved {len(keys_to_write)} Langdock API keys to {file_path}")
-    except Exception as e:
-        logging.error(f"Error writing Langdock API keys to file: {e}")
+    await asyncio.to_thread(_write_keys_sync, file_path, keys)
 
 def get_random_phone():
     """
