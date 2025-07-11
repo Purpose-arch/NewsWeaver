@@ -73,6 +73,9 @@ async def main():
     try:
         logger.info("Запуск сервиса...")
         
+        # Запускаем веб-сервер первым
+        asyncio.create_task(start_web_server())
+        
         # Убеждаемся, что 5 ключей Langdock API сгенерированы до запуска основных компонентов
         await langdock_key_gen.ensure_initial_keys_generated()
         
@@ -91,8 +94,6 @@ async def main():
         # Запускаем генератор ключей Langdock в фоновом режиме для поддержания их количества
         asyncio.create_task(langdock_key_gen.main_langdock_generator())
 
-        # Запускаем минимальный веб-сервер для проверки состояния здоровья
-        asyncio.create_task(start_web_server())
 
         # Запускаем задачу для отправки периодических keep-alive запросов
         asyncio.create_task(send_keep_alive_request())
