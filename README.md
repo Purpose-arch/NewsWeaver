@@ -10,7 +10,7 @@
   <a href="#русский-ru">Русский</a>
 </p>
 
-# Telegram NewsBot
+# NewsWeaver Telegram Bot
 
 ---
 
