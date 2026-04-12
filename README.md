@@ -17,6 +17,8 @@
 
 News aggregator for Telegram channels with automatic text rewriting via LLM.
 
+> 💡 **Note:** Pet project. It was written for my personal tasks, and worked perfectly, as it became unnecessary I remade it for general use. There may be bugs. AI was used.
+
 ### How it works
 
 The bot forwards, rewrites, and publishes posts from donor channels:
@@ -57,6 +59,8 @@ docker-compose up -d --build
 <h2 id="русский-ru">🇷🇺 Русский (RU)</h2>
 
 Агрегатор новостей для Telegram-каналов с функцией автоматического переписывания текста (рерайта) через LLM.
+
+> 💡 **Примечание:** Пет-проект. Написан был для моих личных задач, и работал отлично, по ненадобности переделал под general use. Ошибки могут быть. ИИ использовался.
 
 ### Как это работает
 
