@@ -1,17 +1,17 @@
-# NewsWeaver Telegram Bot
 
-<div align="center">
-  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/aiogram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Aiogram">
-  <img src="https://img.shields.io/badge/Telethon-00aced?style=for-the-badge&logo=telegram&logoColor=white" alt="Telethon">
-  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
-</div>
 
 <p align="center">
   <a href="#english-en">English</a> •
   <a href="#русский-ru">Русский</a>
 </p>
 
+# NewsWeaver Telegram Bot
+<div align="center">
+  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/aiogram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Aiogram">
+  <img src="https://img.shields.io/badge/Telethon-00aced?style=for-the-badge&logo=telegram&logoColor=white" alt="Telethon">
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
+</div>
 ---
 
 <h2 id="english-en">🇬🇧 English (EN)</h2>
