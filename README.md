@@ -12,7 +12,6 @@
   <img src="https://img.shields.io/badge/Telethon-00aced?style=for-the-badge&logo=telegram&logoColor=white" alt="Telethon">
   <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
 </div>
----
 
 <h2 id="english-en">🇬🇧 English (EN)</h2>
 
