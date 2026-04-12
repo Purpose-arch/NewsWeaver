@@ -1,3 +1,5 @@
+# NewsWeaver Telegram Bot
+
 <div align="center">
   <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/aiogram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Aiogram">
@@ -9,8 +11,6 @@
   <a href="#english-en">English</a> •
   <a href="#русский-ru">Русский</a>
 </p>
-
-# NewsWeaver Telegram Bot
 
 ---
 
