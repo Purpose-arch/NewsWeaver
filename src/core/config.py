@@ -1,46 +1,58 @@
 import os
-from dotenv import load_dotenv
+from typing import List, Optional
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Load .env
-load_dotenv()
 
-def parse_list(var_name: str, cast_type=str):
-    val = os.getenv(var_name, "")
-    if not val:
-        return []
-    return [cast_type(i.strip()) for i in val.split(",") if i.strip()]
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
-# Telegram API (single session)
-API_ID         = int(os.getenv("API_ID"))
-API_HASH       = os.getenv("API_HASH")
-STRING_SESSION = os.getenv("STRING_SESSION")
+    # Telegram API
+    api_id: int
+    api_hash: str
+    string_session: str
+    bot_token: str
 
-# API keys
-REQUESTY_APIS  = parse_list("REQUESTY_APIS", str)
-GOOGLE_AI_API_KEYS = parse_list("GOOGLE_AI_API_KEYS", str)
-# Список моделей в порядке приоритета (если одна не работает, используем следующую)
-AI_MODELS = parse_list("AI_MODELS", str) or ["gemini-2.5-pro-exp-03-25", "gemini-1.5-pro", "gemini-1.5-flash"]
+    # Channels
+    source_ids: str = ""  # Comma-separated
+    target_id: int
+    moderation_chat_id: int
+    source_channel_id: str = ""  # Used for alerts
 
-# VoidAI API
-VOIDAI_API_KEYS = parse_list("VOIDAI_API_KEYS", str)
-# Список моделей VoidAI в порядке приоритета
-VOIDAI_MODELS = parse_list("VOIDAI_MODELS", str) or ["claude-3-5-sonnet-20241022", "gpt-4o", "gemini-1.5-pro"]
+    # Admins
+    admin_ids: str = ""
 
-# Источники для парсинга
-SOURCE_IDS     = parse_list("SOURCE_IDS", int)
-# Админы для модерации
-ADMIN_IDS      = parse_list("ADMIN_IDS", int)
+    # LLM Settings (OpenAI Compatible)
+    llm_api_key: SecretStr = Field(default=SecretStr(""))
+    llm_base_url: str = Field(default="https://api.openai.com/v1")
+    llm_model_name: str = Field(default="gpt-4o-mini")
 
-# Bot API и куда публиковать
-BOT_TOKEN      = os.getenv("BOT_TOKEN")
-TARGET_ID      = int(os.getenv("TARGET_ID", "0"))
+    # App Web
+    web_app_url: Optional[str] = None
+    port: int = 8080
 
-# Конфигурация для alert bot (rocket/UAV alerts)
-# Канал или чат для мониторинга оповещений о воздушных тревогах
-SOURCE_CHANNEL_ID = os.getenv("SOURCE_CHANNEL_ID", "")
-# Публикация осуществляется в тот же канал, что и основной бот (TARGET_ID)
+    def get_source_ids(self) -> List[int]:
+        if not self.source_ids:
+            return []
+        return [int(x.strip()) for x in self.source_ids.split(",") if x.strip()]
 
-# ID группового чата для модерации новостей
-# Этот чат используется для отправки новостей на модерацию
-# Бот должен быть администратором в этом чате
-MODERATION_CHAT_ID = int(os.getenv("MODERATION_CHAT_ID", "0"))
+    def get_admin_ids(self) -> List[int]:
+        if not self.admin_ids:
+            return []
+        return [int(x.strip()) for x in self.admin_ids.split(",") if x.strip()]
+
+
+settings = Settings()
+
+# Alias common variables for backwards compatibility during refactor
+API_ID = settings.api_id
+API_HASH = settings.api_hash
+STRING_SESSION = settings.string_session
+BOT_TOKEN = settings.bot_token
+MODERATION_CHAT_ID = settings.moderation_chat_id
+TARGET_ID = settings.target_id
+SOURCE_CHANNEL_ID = settings.source_channel_id
+SOURCE_IDS = settings.get_source_ids()
+ADMIN_IDS = settings.get_admin_ids()

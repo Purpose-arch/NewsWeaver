@@ -4,11 +4,12 @@ from telethon import TelegramClient
 from src.core.logger import logger
 import src.core.clients as clients
 
+
 async def send_media(client: TelegramClient, target: int, message) -> list[str]:
     """
-    Отправляем любые вложения (фото, видео, документы, стикеры и т.д.) из оригинального сообщения
-    в целевой чат. Если прямая отправка не прошла, качаем локально и заливаем.
-    Возвращает список локальных путей (если были скачаны).
+    Sends any attachments (photos, videos, documents, stickers, etc.) from the original message
+    to the target chat. If direct sending fails, downloads locally and uploads.
+    Returns a list of local paths (if downloaded).
     """
     saved = []
     if not message.media:

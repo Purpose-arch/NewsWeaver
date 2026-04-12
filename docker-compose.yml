@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  newsbot:
+    build: .
+    container_name: newsbot2ndgen
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
